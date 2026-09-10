@@ -203,6 +203,12 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Frontend dependencies and generated output
+node_modules/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+
 # Ruff stuff:
 .ruff_cache/
 
