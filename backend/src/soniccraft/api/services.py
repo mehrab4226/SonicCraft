@@ -12,7 +12,8 @@ from soniccraft.dsp.analysis import clipping_fraction, dbfs, peak_amplitude, wav
 
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 MAX_DURATION_SECONDS = 300
-MAX_DECODED_SAMPLES = 16_000_000
+# A floating-point WAV revision must itself fit through the upload boundary.
+MAX_DECODED_SAMPLES = 8_000_000
 
 
 def decode_upload(file: UploadFile):
@@ -32,7 +33,7 @@ def decode_upload(file: UploadFile):
             raise HTTPException(422, "Audio contains no samples.")
         if (metadata.duration_seconds > MAX_DURATION_SECONDS
                 or metadata.frames * metadata.channels > MAX_DECODED_SAMPLES):
-            raise HTTPException(413, "Audio exceeds the 5-minute or 16-million-sample limit.")
+            raise HTTPException(413, "Audio exceeds the 5-minute or 8-million-sample limit.")
         samples, rate, metadata = read_audio_bytes(payload)
     except (sf.LibsndfileError, RuntimeError) as error:
         raise HTTPException(422, "Cannot decode this file. Try a WAV, FLAC, or OGG audio file.") from error

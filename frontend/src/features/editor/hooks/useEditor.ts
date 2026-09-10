@@ -73,9 +73,12 @@ export function useEditor() {
     const resume = engine.playing;
     engine.seek(Math.min(duration, Math.max(0, value)));
     setPosition(engine.position);
-    if (resume) {
+    if (resume && engine.position < duration) {
       try { await engine.play(tracks); setPlaying(engine.playing); }
       catch (cause) { setError(String(cause)); setPlaying(false); }
+    } else {
+      setPlaying(false);
+      setPeak(0);
     }
   };
   const togglePlayback = async () => {
@@ -114,6 +117,9 @@ export function useEditor() {
     for (const file of files) {
       if (file.size > 32 * 1024 * 1024) throw new Error(`${file.name} exceeds the 32 MiB file limit.`);
       const asset = await loadAsset(file, signal);
+      const assets = [...tracks.map(track => track.asset), ...imported.map(track => track.asset), asset];
+      const totalBytes = assets.reduce((sum, item) => sum + item.blob.size + item.buffer.length * item.buffer.numberOfChannels * 4, 0);
+      if (totalBytes > 256 * 1024 * 1024) throw new Error('This session exceeds the 256 MiB decoded-audio limit. Use shorter recordings.');
       imported.push({ id: crypto.randomUUID(), name: file.name, color: colors[(tracks.length + imported.length) % colors.length], muted: false, solo: false, gainDb: 0, asset });
     }
     if (!imported.length) return;

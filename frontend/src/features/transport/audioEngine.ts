@@ -5,7 +5,9 @@ import { audibleTracks, projectDuration } from '../editor/state/editorReducer';
 export class AudioEngine {
   private context?: AudioContext;
   private master?: GainNode;
-  private analyser?: AnalyserNode;
+  private splitter?: ChannelSplitterNode;
+  private analysers: AnalyserNode[] = [];
+  private meterSamples = new Float32Array(2048);
   private sources: Array<{ source: AudioBufferSourceNode; gain: GainNode }> = [];
   private startedAt = 0;
   private offset = 0;
@@ -19,10 +21,15 @@ export class AudioEngine {
       this.context = new AudioContext();
       this.master = this.context.createGain();
       this.master.gain.value = 10 ** (this.volumeDb / 20);
-      this.analyser = this.context.createAnalyser();
-      this.analyser.fftSize = 2048;
-      this.master.connect(this.analyser);
-      this.analyser.connect(this.context.destination);
+      this.master.connect(this.context.destination);
+      this.splitter = this.context.createChannelSplitter(2);
+      this.master.connect(this.splitter);
+      this.analysers = [0, 1].map(channel => {
+        const analyser = this.context!.createAnalyser();
+        analyser.fftSize = 2048;
+        this.splitter!.connect(analyser, channel);
+        return analyser;
+      });
     }
     return this.context;
   }
@@ -88,22 +95,25 @@ export class AudioEngine {
   }
 
   meter() {
-    if (!this.analyser || !this.playing) return 0;
-    const samples = new Float32Array(this.analyser.fftSize);
-    this.analyser.getFloatTimeDomainData(samples);
+    if (!this.playing) return 0;
     let peak = 0;
-    for (const value of samples) peak = Math.max(peak, Math.abs(value));
+    for (const analyser of this.analysers) {
+      analyser.getFloatTimeDomainData(this.meterSamples);
+      for (const value of this.meterSamples) peak = Math.max(peak, Math.abs(value));
+    }
     return peak;
   }
 
   dispose() {
     this.pause();
     this.master?.disconnect();
-    this.analyser?.disconnect();
+    this.splitter?.disconnect();
+    this.analysers.forEach(analyser => analyser.disconnect());
     const context = this.context;
     this.context = undefined;
     this.master = undefined;
-    this.analyser = undefined;
+    this.splitter = undefined;
+    this.analysers = [];
     if (context && context.state !== 'closed') void context.close();
   }
 }

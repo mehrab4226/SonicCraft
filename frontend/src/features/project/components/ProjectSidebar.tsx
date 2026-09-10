@@ -1,37 +1,25 @@
-import { AudioWaveform, CirclePlus, Headphones, Layers3, Mic2, Music2 } from 'lucide-react';
+import { AudioWaveform, CirclePlus, Layers3 } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import type { EditorController } from '../../editor/hooks/useEditor';
 
-const tracks = [
-  { name: 'Main recording', detail: 'Stereo · 44.1 kHz', color: '#7c5cff', icon: AudioWaveform },
-  { name: 'Room tone', detail: 'Mono · 44.1 kHz', color: '#22c9a7', icon: Mic2 },
-  { name: 'Ambient bed', detail: 'Stereo · 48 kHz', color: '#ffb547', icon: Music2 },
-];
-
-export function ProjectSidebar() {
+export function ProjectSidebar({ editor, onImport }: { editor: EditorController; onImport: () => void }) {
   return (
     <aside className="sidebar panel-surface">
       <div className="panel-heading">
-        <div>
-          <span className="eyebrow">Project</span>
-          <h2>Audio layers</h2>
-        </div>
-        <button type="button" className="small-icon-button" aria-label="Add track"><CirclePlus /></button>
+        <div><span className="eyebrow">Project · {editor.tracks.length} / 8</span><h2>Audio layers</h2></div>
+        <button type="button" className="small-icon-button" aria-label="Add track" disabled={!!editor.busy} onClick={onImport}><CirclePlus /></button>
       </div>
-
       <div className="track-list">
-        {tracks.map(({ name, detail, color, icon: Icon }, index) => (
-          <button type="button" className={`track-item ${index === 0 ? 'is-selected' : ''}`} key={name}>
-            <span className="track-icon" style={{ '--track-color': color } as React.CSSProperties}><Icon /></span>
-            <span><strong>{name}</strong><small>{detail}</small></span>
+        {editor.tracks.map(track => (
+          <button type="button" className={`track-item ${track.id === editor.selectedId ? 'is-selected' : ''}`} key={track.id} aria-pressed={track.id === editor.selectedId} onClick={() => editor.select(track.id)} disabled={!!editor.busy}>
+            <span className="track-icon" style={{ '--track-color': track.color } as CSSProperties}><AudioWaveform /></span>
+            <span><strong>{track.name}</strong><small>{track.asset.inspection.metadata.channels === 1 ? 'Mono' : 'Stereo'} · {track.asset.inspection.metadata.sample_rate / 1000} kHz{track.muted ? ' · Muted' : track.solo ? ' · Solo' : ''}</small></span>
           </button>
         ))}
+        {!editor.tracks.length && <p className="helper-text">Your imported audio will appear here.</p>}
       </div>
-
       <div className="sidebar-spacer" />
-      <div className="course-card">
-        <span className="course-icon"><Layers3 /></span>
-        <div><span className="eyebrow">Now exploring</span><strong>Frequency domain</strong></div>
-        <Headphones />
-      </div>
+      <div className="course-card"><span className="course-icon"><Layers3 /></span><div><span className="eyebrow">Signals & systems</span><strong>Amplitude and time domain</strong></div></div>
     </aside>
   );
 }
