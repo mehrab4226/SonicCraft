@@ -1,2 +1,2 @@
-# Compatibility entry point; backend dependencies are defined in backend/pyproject.toml.
--e ./backend
+# Desktop application plus the existing NumPy/SciPy/SoundFile DSP package.
+-e ./backend[desktop]

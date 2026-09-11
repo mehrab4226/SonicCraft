@@ -130,6 +130,21 @@ def wiener_denoise(audio: ArrayLike, *, window_size: int = 29, noise_power: floa
         raise ValueError("window_size must be odd")
     if noise_power is not None and (not np.isfinite(noise_power) or noise_power < 0):
         raise ValueError("noise_power must be finite and non-negative")
+    def process_channel(channel: NDArray[np.float64]) -> NDArray[np.float64]:
+        # Local Wiener estimate: mean + max(1 - noise / variance, 0) * residual.
+        # Use the same zero-padded local statistics as scipy.signal.wiener, but
+        # define zero-variance regions explicitly so silence never produces 0/0.
+        window = np.ones(size, dtype=np.float64) / size
+        mean = signal.correlate(channel, window, mode="same")
+        variance = np.maximum(signal.correlate(channel * channel, window, mode="same") - mean * mean, 0)
+        power = float(np.mean(variance)) if noise_power is None else float(noise_power)
+        if power == 0:
+            return channel.copy()
+        ratio = np.ones_like(variance)
+        np.divide(power, variance, out=ratio, where=variance > 0)
+        gain = np.maximum(1 - ratio, 0)
+        return mean + gain * (channel - mean)
+
     if samples.ndim == 1:
-        return np.asarray(signal.wiener(samples, mysize=size, noise=noise_power), dtype=np.float64)
-    return np.column_stack([signal.wiener(samples[:, channel], mysize=size, noise=noise_power) for channel in range(samples.shape[1])])
+        return process_channel(samples)
+    return np.column_stack([process_channel(samples[:, channel]) for channel in range(samples.shape[1])])

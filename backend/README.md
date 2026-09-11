@@ -1,6 +1,8 @@
 # SonicCraft DSP backend
 
-Framework-independent Python utilities used by the future SonicCraft web API.
+Framework-independent Python DSP utilities reused by the local PyQt6 desktop app.
+The desktop foundation lives in `soniccraft.desktop`; see the root README for
+installation and launch instructions.
 All audio arrays follow one convention:
 
 - mono: `(samples,)`
@@ -18,8 +20,8 @@ All audio arrays follow one convention:
 - `soniccraft.dsp.sampling` — resampling, alias calculations, and sinc reconstruction
 - `soniccraft.dsp.transforms` — DFT/FFT, Fourier series, STFT, spectrogram, and Griffin-Lim
 
-The package deliberately has no web-framework dependency. A future API layer can
-call these functions without coupling the signal-processing code to HTTP.
+Core DSP installation has no Qt or web-framework dependency. The `desktop`
+extra adds PyQt6/PyQtGraph. DSP functions remain independent of the desktop UI.
 
 ## Example
 

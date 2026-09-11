@@ -28,6 +28,20 @@ class NoiseAndIOTests(unittest.TestCase):
         self.assertEqual(byte_metadata.frames, sample_rate)
         np.testing.assert_allclose(from_bytes, samples, atol=4e-5)
 
+    def test_wiener_handles_silence_and_preserves_independent_channels(self):
+        from scipy.signal import wiener
+
+        rng = np.random.default_rng(12)
+        noisy = rng.normal(0, 0.1, 2000)
+        stereo = np.column_stack((np.zeros_like(noisy), noisy))
+        result = wiener_denoise(stereo, window_size=29)
+        self.assertEqual(result.shape, stereo.shape)
+        self.assertTrue(np.all(np.isfinite(result)))
+        np.testing.assert_array_equal(result[:, 0], 0)
+        np.testing.assert_allclose(result[:, 1], wiener(noisy, mysize=29), atol=1e-12)
+        np.testing.assert_array_equal(wiener_denoise(np.zeros(64)), np.zeros(64))
+        np.testing.assert_array_equal(wiener_denoise(noisy, noise_power=0), noisy)
+
     def test_noise_algorithms_preserve_shape_and_finite_values(self):
         sample_rate = 8_000
         rng = np.random.default_rng(7)

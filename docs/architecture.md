@@ -1,35 +1,32 @@
 # SonicCraft architecture
 
+The active application is a local PyQt6 desktop window. It reuses the existing
+`soniccraft` package under `backend/src` through ordinary Python imports.
+
 ```text
-SonicCraft/
-├── backend/
-│   ├── pyproject.toml
-│   ├── src/soniccraft/
-│   │   ├── audio_io.py
-│   │   └── dsp/
-│   │       ├── _validation.py
-│   │       ├── analysis.py
-│   │       ├── convolution.py
-│   │       ├── effects.py
-│   │       ├── filters.py
-│   │       ├── noise_reduction.py
-│   │       ├── sampling.py
-│   │       └── transforms.py
-│   └── tests/
-├── frontend/
-│   └── src/
-│       ├── app/
-│       ├── features/
-│       ├── shared/
-│       └── styles/
-└── docs/
+main.py
+  -> soniccraft.desktop.main
+       -> QApplication
+       -> MainWindow
+            -> menus / toolbar / status
+            -> WaveformWidget (PyQtGraph)
+
+soniccraft.audio_io          SoundFile I/O for the next desktop phase
+soniccraft.dsp               Independent NumPy/SciPy signal processing
 ```
 
-The frontend owns interaction, visualization, browser audio lifecycle, and typed
-API adapters. The backend package owns deterministic audio math and file encoding.
-An HTTP layer can be added later without moving DSP functions or importing web
-framework objects into them.
+Phase 1 creates no audio stream, worker, server, database, or network request.
+The waveform is an empty plotting surface; audio loading and GUI-to-DSP processing
+are explicitly pending.
 
-Audio crosses the boundary as an uploaded file or encoded byte stream. Inside the
-backend, audio is a NumPy array with time on axis 0. Mono is `(samples,)`; multiple
-channels are `(samples, channels)`.
+Audio in the existing DSP core has time on axis 0. Mono is `(samples,)`; stereo is
+`(samples, 2)`. Floating-point values preserve headroom so clipping can be
+detected before encoding. GUI classes must call DSP functions rather than embed
+the mathematics in event handlers.
+
+The retired React frontend and HTTP adapter have been removed from the working
+tree. `requirements.txt` installs the `desktop` extra; no web stack is required.
+
+The existing package layout is retained to preserve working DSP code and tests.
+Follow `implementation-plan.md` one phase at a time; Phase 2 will connect local
+loading, metadata, playback, stop, and saving to this foundation.
