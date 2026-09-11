@@ -1,6 +1,8 @@
 import unittest
 
 import numpy as np
+from soniccraft.dsp.transforms import fft_spectrum
+from soniccraft.dsp.analysis import get_dominant_frequency
 
 from soniccraft.dsp.transforms import (
     discrete_fourier_transform,
@@ -74,6 +76,27 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(reconstructed.shape, samples.shape)
         self.assertTrue(np.all(np.isfinite(reconstructed)))
         self.assertLessEqual(float(np.max(np.abs(reconstructed))), 1.0)
+
+def test_fft_dominant_frequency():
+    sample_rate = 44100
+    duration = 1.0
+    # Generate 1 second of time data
+    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    
+    # Test 1: 440 Hz Sine Wave
+    signal_440 = np.sin(2 * np.pi * 440.0 * t)
+    spectrum_440 = fft_spectrum(signal_440, sample_rate, window="hann")
+    peak_440 = get_dominant_frequency(spectrum_440)
+    
+    # Assert the peak is within 5 Hz of 440 (accounting for bin resolution)
+    assert abs(peak_440 - 440.0) < 5.0  
+    
+    # Test 2: 1000 Hz Sine Wave
+    signal_1000 = np.sin(2 * np.pi * 1000.0 * t)
+    spectrum_1000 = fft_spectrum(signal_1000, sample_rate, window="hann")
+    peak_1000 = get_dominant_frequency(spectrum_1000)
+    
+    assert abs(peak_1000 - 1000.0) < 5.0
 
 
 if __name__ == "__main__":

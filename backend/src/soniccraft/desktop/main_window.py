@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QMessageBox, QToolBar, QVBoxLayout, QWidget,
-    QFileDialog, QLabel, QComboBox, QHBoxLayout,
+    QFileDialog, QLabel, QComboBox, QHBoxLayout, QDockWidget
 )
 import sounddevice as sd
 
@@ -17,7 +17,9 @@ from .effects_panel import EffectsPanel, number, button
 from .processing import process, sample_range, filter_sections, check_transform_size
 from soniccraft.dsp.filters import frequency_response
 from soniccraft.dsp.noise_reduction import estimate_noise_profile
-
+from .waveform_widget import WaveformWidget
+from .spectrum_widget import SpectrumWidget
+from soniccraft.dsp.transforms import fft_spectrum
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -62,6 +64,7 @@ class MainWindow(QMainWindow):
         self._action("reset_view", "&Reset waveform view", lambda: self.waveform.reset_view())
         self._action("about", "&About SonicCraft", self._show_about)
         self._action("devices", "Refresh audio devices", self.refresh_devices)
+        self._action("spectrum", "FFT Spectrum Analyzer", self.toggle_spectrum)
         for name, index in (("volume_panel", 0), ("eq_panel", 1), ("noise_panel", 2)):
             self._action(name, name.replace("_panel", "").title() + " controls", lambda checked=False, i=index: self.effects.setCurrentIndex(i))
         for name in ("trim", "delete", "reverse", "normalize", "silence"):
@@ -72,7 +75,7 @@ class MainWindow(QMainWindow):
         for title, names in (
             ("&File", ("open", "save", "exit")),
             ("&Edit", ("undo", "redo", "trim", "delete", "reverse", "silence")),
-            ("&Effects", ("normalize", "volume_panel", "eq_panel", "noise_panel")), ("&Analysis", ()),
+            ("&Effects", ("normalize", "volume_panel", "eq_panel", "noise_panel")), ("&Analysis", ("spectrum",)),
             ("&View", ("reset_view", "devices")), ("&Help", ("about",)),
         ):
             menu = self.menuBar().addMenu(title)
@@ -124,9 +127,49 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.effects, 1)
         self.setCentralWidget(self.workspace)
 
+        # --- ADD THESE LINES ---
+        self.spectrum_dock = QDockWidget("FFT Spectrum Analyzer", self)
+        self.spectrum_dock.setObjectName("spectrumDock")
+        self.spectrum_widget = SpectrumWidget(self.spectrum_dock)
+        self.spectrum_dock.setWidget(self.spectrum_widget)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.spectrum_dock)
+        self.spectrum_dock.hide() # Hidden by default
+
     def _selection_changed(self, start, end):
         self.start_time.setValue(start)
         self.end_time.setValue(end)
+        self.update_spectrum() # <-- Added this line
+    # --- ADD THESE TWO NEW METHODS ---
+    def toggle_spectrum(self):
+        """Shows or hides the analyzer panel."""
+        if self.spectrum_dock.isHidden():
+            self.spectrum_dock.show()
+            self.update_spectrum()
+        else:
+            self.spectrum_dock.hide()
+
+    def update_spectrum(self):
+        """Runs the FFT math and pushes data to the UI widget."""
+        if self.document.audio is None or self.spectrum_dock.isHidden():
+            return
+            
+        try:
+            start, end = self.playback_range()
+            if start >= end:
+                return
+                
+            # Limit the analysis to a chunk of samples so the GUI never freezes.
+            # 65536 samples gives ultra-high resolution without lagging the drag-selection.
+            samples = self.document.audio.samples[start:end]
+            if len(samples) > 65536:
+                samples = samples[:65536]
+                
+            # Run the FFT!
+            spectrum = fft_spectrum(samples, self.document.audio.sample_rate)
+            self.spectrum_widget.set_spectrum(spectrum)
+            
+        except Exception as error:
+            print(f"Spectrum Analysis Error: {error}")
 
     def apply_operation(self, operation, parameters):
         audio = self.document.audio
