@@ -2,7 +2,7 @@
 
 ## Verified execution status — 2026-09-11
 
-The desktop direction is confirmed. Only Phase 1 is implemented in this pass.
+The desktop direction is confirmed. Phases 1 and 2 are implemented in this pass.
 The existing `soniccraft` DSP package is reused in place under `backend/src`.
 Retired React/FastAPI source was archived outside the repository before cleanup.
 The working tree now contains the desktop application and shared DSP package only.
@@ -17,11 +17,11 @@ The working tree now contains the desktop application and shared DSP package onl
 - [x] Verified the remaining DSP and desktop suite after cleanup: 19 tests passing.
 - [x] Checked Python compilation and installed dependency consistency.
 - [x] Fixed and regression-tested Wiener denoising on silence in the reused core.
-- [ ] Phase 2: connect and verify local open, metadata, playback, stop, and save.
+- [x] Phase 2: connect and verify local open, metadata, playback, stop, and save.
 - [ ] Later phases: waveform interaction, editing, effects, analysis, and live audio.
 
-**Desktop audio actions are disabled and are not claimed to be working or wired.**
-The next implementation phase must finish audio I/O before adding DSP features.
+**Desktop audio I/O is wired and covered by workflow tests.** The next implementation
+phase can focus on richer waveform interaction, editing, effects, and analysis.
 
 ---
 

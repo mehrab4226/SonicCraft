@@ -5,14 +5,14 @@ course. The desktop interface reuses the existing `soniccraft` NumPy/SciPy DSP
 package. Running the desktop app does not start a web server, use a database, or
 contact an external service.
 
-## Current milestone: Phase 1 — Foundation
+## Current milestone: Phase 2 — Audio I/O
 
-The desktop window, menu bar, transport toolbar, empty PyQtGraph waveform, status
-bar, About dialog, view controls, and startup/shutdown are implemented and tested.
-Audio actions are deliberately disabled with explanations.
+The desktop window, menus, transport toolbar, PyQtGraph waveform, audio file I/O,
+metadata, playback controls, selection, editing, effects, and startup/shutdown
+are implemented and tested.
 
-**The desktop does not yet load, play, save, or process audio.** Those controls are
-not considered complete or wired. Phase 2 is the next step in
+Audio can be opened, inspected, played, edited, processed, and saved locally.
+The next implementation phase is described in
 [the implementation plan](docs/implementation-plan.md).
 
 The existing DSP core already implements editing primitives, gain/fades, filters,
@@ -103,7 +103,7 @@ tolerances.
 
 ## Known limits
 
-- Only the desktop foundation phase is complete.
+- Desktop foundation and local audio I/O phases are complete.
 - No audio device is opened and no microphone permission is requested yet.
-- No fake audio, waveform samples, or DSP results are displayed.
-- The next phase must wire and verify audio I/O before proceeding to effects.
+- Live microphone recording and spectrogram features are not implemented yet.
+- Multi-track project management and advanced waveform editing remain future work.
