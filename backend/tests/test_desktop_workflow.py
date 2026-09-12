@@ -17,6 +17,26 @@ from soniccraft.desktop.audio_engine import Player
 
 
 class DocumentTests(unittest.TestCase):
+    def test_original_reset_survives_history_eviction_and_export(self):
+        doc = Document()
+        original = AudioData(np.linspace(-.5, .5, 100), 8000)
+        doc.load(original)
+        for index in range(25):
+            doc.commit(original.samples * ((index + 1) / 30))
+        edited = doc.audio
+        doc.saved_samples = edited.samples
+        doc.reset_to_original()
+        self.assertIs(doc.audio, original)
+        self.assertTrue(doc.dirty)
+        doc.undo()
+        self.assertIs(doc.audio, edited)
+        self.assertFalse(doc.dirty)
+        replacement = AudioData(np.zeros(100), 16000)
+        doc.load(replacement)
+        doc.commit(np.ones(100) * .1)
+        doc.reset_to_original()
+        self.assertIs(doc.audio, replacement)
+
     def test_mono_stereo_save_reload_and_clipping_policy(self):
         with tempfile.TemporaryDirectory() as folder:
             for channels in (1, 2):

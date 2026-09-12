@@ -2,6 +2,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox
 from soniccraft.dsp.transforms import Spectrum
 from soniccraft.dsp.analysis import get_dominant_frequency
+from .theme import style_plot
 
 class SpectrumWidget(QWidget):
     def __init__(self, parent=None):
@@ -10,7 +11,7 @@ class SpectrumWidget(QWidget):
         
         # Main layout for the panel
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(18, 12, 18, 12)
         
         # Top control bar
         top_bar = QHBoxLayout()
@@ -30,9 +31,10 @@ class SpectrumWidget(QWidget):
         
         # The PyQtGraph Plot
         self.plot_widget = pg.PlotWidget(background="#0b0f16")
+        style_plot(self.plot_widget)
+        self.plot_widget.setMinimumHeight(100)
         self.plot_widget.setLabel("bottom", "Frequency", units="Hz")
         self.plot_widget.setLabel("left", "Magnitude", units="dB")
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.15)
         
         # The line drawn on the graph
         self.plot_curve = self.plot_widget.plot(pen="#64d6cd")
@@ -74,5 +76,3 @@ class SpectrumWidget(QWidget):
             y = np.mean(y, axis=1)
             
         self.plot_curve.setData(x, y)
-
-    

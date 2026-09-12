@@ -10,6 +10,7 @@ from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication
 
 from .main_window import MainWindow
+from .theme import STYLESHEET
 
 
 def create_application(argv: list[str] | None = None) -> QApplication:
@@ -26,16 +27,16 @@ def create_application(argv: list[str] | None = None) -> QApplication:
     app.setStyle("Fusion")
     palette = QPalette()
     colors = {
-        QPalette.ColorRole.Window: "#11151d",
+        QPalette.ColorRole.Window: "#0d1115",
         QPalette.ColorRole.WindowText: "#eef1f8",
-        QPalette.ColorRole.Base: "#0b0f16",
-        QPalette.ColorRole.AlternateBase: "#191f2b",
+        QPalette.ColorRole.Base: "#10171c",
+        QPalette.ColorRole.AlternateBase: "#192229",
         QPalette.ColorRole.Text: "#eef1f8",
-        QPalette.ColorRole.Button: "#202736",
+        QPalette.ColorRole.Button: "#202931",
         QPalette.ColorRole.ButtonText: "#eef1f8",
-        QPalette.ColorRole.Highlight: "#8064ff",
-        QPalette.ColorRole.HighlightedText: "#ffffff",
-        QPalette.ColorRole.ToolTipBase: "#202736",
+        QPalette.ColorRole.Highlight: "#91efd0",
+        QPalette.ColorRole.HighlightedText: "#10271f",
+        QPalette.ColorRole.ToolTipBase: "#263630",
         QPalette.ColorRole.ToolTipText: "#eef1f8",
     }
     for role, value in colors.items():
@@ -43,6 +44,7 @@ def create_application(argv: list[str] | None = None) -> QApplication:
     for role in (QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText, QPalette.ColorRole.WindowText):
         palette.setColor(QPalette.ColorGroup.Disabled, role, QColor("#798399"))
     app.setPalette(palette)
+    app.setStyleSheet(STYLESHEET)
     app.setQuitOnLastWindowClosed(True)
     return app
 

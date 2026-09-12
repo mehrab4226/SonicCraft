@@ -1,27 +1,123 @@
 # SonicCraft — PyQt6 DSP Audio Editor
 
-## Verified execution status — 2026-09-11
+## Verified execution status — 2026-09-12
 
-The desktop direction is confirmed. Phases 1 and 2 are implemented in this pass.
-The existing `soniccraft` DSP package is reused in place under `backend/src`.
-Retired React/FastAPI source was archived outside the repository before cleanup.
-The working tree now contains the desktop application and shared DSP package only.
+**Phase 7 — Noise Reduction is the last consecutively completed core milestone.**
+The current application is a local PyQt6 desktop editor importing the shared
+NumPy/SciPy DSP package under `backend/src`. Features from Phases 8, 9, and 11
+operate, but do not satisfy their full original requirements.
 
-- [x] Inspected the existing repository and preserved its changes.
-- [x] Added the desktop dependency extra and root `main.py` launcher.
-- [x] Implemented a PyQt6 main window, menus, toolbar, status bar, and About.
-- [x] Added an empty PyQtGraph waveform with real time/amplitude axes.
-- [x] Verified native window rendering and automated startup/shutdown.
-- [x] Ran DSP, desktop, and installed legacy API tests before cleanup: 26 passing.
-- [x] Removed retired web source, HTTP-only dependencies/tests, and generated caches.
-- [x] Verified the remaining DSP and desktop suite after cleanup: 19 tests passing.
-- [x] Checked Python compilation and installed dependency consistency.
-- [x] Fixed and regression-tested Wiener denoising on silence in the reused core.
-- [x] Phase 2: connect and verify local open, metadata, playback, stop, and save.
-- [ ] Later phases: waveform interaction, editing, effects, analysis, and live audio.
+Here, **completed** means implemented and automated-tested for the core milestone;
+**partial** means a desktop workflow exists with requirements still outstanding;
+**DSP-only** means reusable processing exists without the required desktop workflow.
+**Unverified** physical-device behavior is separate from automated completion.
+Optional wavelet denoising is absent and does not block the Phase 7 core baseline.
 
-**Desktop audio I/O is wired and covered by workflow tests.** The next implementation
-phase can focus on richer waveform interaction, editing, effects, and analysis.
+| Phase | Status | Evidence or remaining work |
+| --- | --- | --- |
+| 1–3: Foundation, Audio I/O, Waveform | Completed; automated-tested | Desktop lifecycle, open/export, metadata, transport, waveform, zoom, selection. See evidence A. |
+| 4–5: Editing, Volume/Fade | Completed; automated-tested | Actual sample edits, gain, fades, undo/redo, undoable reset to original audio. See evidence B. |
+| 6–7: Filters/EQ, Noise Reduction | Completed; automated-tested | Four filter types, nine-band EQ, response previews, noise profiles, subtraction, Wiener, spectral gating. Optional wavelets absent. See evidence C. |
+| 7A: Stereo Channel Workspace | Planned | Separate channel lanes and independent channel controls; next priority. |
+| 7B: Multitrack Mixing | Planned | New desktop milestone after 7A; `mix_audio()` alone is not a desktop mixer. |
+| 8: FFT | Partial; correctness issue | Selection analysis truncates at 65,536 samples; stereo dB plotting and dominant-frequency labeling aggregate channels differently. See evidence D. |
+| 9: Spectrogram | Partial | File heatmaps, FFT-size/window controls, plot navigation work. Explicit hop, frequency-range, magnitude/dB controls and spectrogram-region selection remain incomplete. See evidence D. |
+| 10: Spectral Editing/Reconstruction | DSP-only | Complex STFT/ISTFT and reconstruction tests exist; desktop spectral edits and reconstructed-audio playback/export are absent. See evidence E. |
+| 11: Live Spectrogram | Partial; ahead of sequence | Microphone monitoring, rolling history, workers, start/stop exist. FFT size is fixed; planned controls and hardware verification remain. See evidence D. |
+| 12: Optional DSP Lab | DSP-only | Sampling, aliasing, convolution and related utilities exist without an interactive lab. See evidence E. |
+| 13: Final Integration | Pending | Remaining feature acceptance and physical speaker/microphone verification required. |
+
+### Implementation and verification evidence
+
+- **A — Foundation, I/O, waveform:** [window/controller](../backend/src/soniccraft/desktop/main_window.py),
+  [audio engine](../backend/src/soniccraft/desktop/audio_engine.py), and
+  [waveform](../backend/src/soniccraft/desktop/waveform_widget.py), covered by
+  [desktop lifecycle tests](../backend/tests/test_desktop.py) and
+  [workflow tests](../backend/tests/test_desktop_workflow.py).
+- **B — Editing, levels, reset:** [document/history](../backend/src/soniccraft/desktop/document.py)
+  and [processing](../backend/src/soniccraft/desktop/processing.py), covered by
+  [operation tests](../backend/tests/test_editor_operations.py) and
+  [workspace tests](../backend/tests/test_desktop_workspace.py).
+- **C — Filters and noise:** [filters](../backend/src/soniccraft/dsp/filters.py),
+  [noise reduction](../backend/src/soniccraft/dsp/noise_reduction.py), and
+  [desktop effect controls](../backend/src/soniccraft/desktop/effects_panel.py), covered by
+  [operation tests](../backend/tests/test_editor_operations.py),
+  [noise/I/O tests](../backend/tests/test_noise_and_io.py), and workflow tests above.
+- **D — Partial analysis workflows:** [FFT widget](../backend/src/soniccraft/desktop/spectrum_widget.py),
+  [display transforms](../backend/src/soniccraft/desktop/analysis.py),
+  [spectrogram widget](../backend/src/soniccraft/desktop/spectrogram_widget.py), and window/controller;
+  [analysis workspace tests](../backend/tests/test_analysis_workspace.py) exercise existing
+  file/live views with simulated streams. These tests do not establish completion
+  of the outstanding controls or correctness of the FFT cases below.
+- **E — Core-only capabilities:** [transforms](../backend/src/soniccraft/dsp/transforms.py),
+  [sampling](../backend/src/soniccraft/dsp/sampling.py),
+  [convolution](../backend/src/soniccraft/dsp/convolution.py), and
+  [mixing/effects](../backend/src/soniccraft/dsp/effects.py), covered by
+  [transform tests](../backend/tests/test_transforms.py) and
+  [processing tests](../backend/tests/test_processing.py).
+
+The audit passed **48 unittest tests** and **49 pytest tests**. Pytest additionally
+discovers the standalone `test_fft_dominant_frequency` function in
+`test_transforms.py`, which unittest discovery skips. Python compilation,
+dependency consistency, and the Qt startup/shutdown smoke test also passed.
+Physical speaker output and microphone capture remain **unverified**: automated
+audio-stream tests use simulated drivers.
+
+Run from the repository root in PowerShell (pytest requires the `dev` extra):
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s backend/tests -v
+.\.venv\Scripts\python.exe -m pytest backend/tests -o addopts='' -q
+.\.venv\Scripts\python.exe -m compileall -q main.py backend/src/soniccraft
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe main.py --smoke-test
+```
+
+For a headless smoke test, set `$env:QT_QPA_PLATFORM = 'offscreen'` first.
+See [README](../README.md) for installation and [architecture](architecture.md)
+for the current runtime structure.
+
+### Recorded workspace milestone
+
+The [sidebar](../backend/src/soniccraft/desktop/sidebar.py) provides category →
+feature drill-down navigation, with Back/All tools navigation. Its six categories
+are Edit & Dynamics, Filters & Equalizer, Noise Reduction, Spectrum Analyzer,
+Spectrogram, and Live Spectrogram. Processing controls occupy the sidebar;
+FFT, file/live spectrograms and filter-response previews share the lower analysis
+workspace beneath the waveform. The transport has one alternating Play/Pause
+button. Reset audio restores the original loaded samples, selects the full range,
+and is itself undoable. Workspace and analysis tests above cover these behaviors.
+Stereo traces are currently overlaid; independent channel editing and multitrack
+mixing are planned, not completed by this layout milestone.
+
+### Reproduced discrepancies and analysis limits
+
+- **FFT selection coverage:** at 8 kHz, 65,536 silent samples followed by 8,000
+  samples of a 1 kHz sine produce a 1 kHz peak when the whole signal is analyzed.
+  The desktop examines only the initial 65,536 samples and reports 0 Hz for that
+  silent prefix. Whole-selection analysis remains an unmet Phase 8 requirement.
+- **Stereo FFT aggregation:** for one second at 8 kHz, let Left contain a 0.8
+  amplitude 440 Hz tone plus a 0.1 amplitude 2 kHz tone, and Right a 0.4 amplitude
+  1 kHz tone plus the same 0.1 amplitude 2 kHz tone. The label's mean linear
+  magnitude peaks at 440 Hz; the mean of channel dB values plotted in dB mode
+  peaks at 2 kHz. Channel aggregation and labeling must be made consistent.
+- **File spectrogram:** the display averages stereo to mono, uses a fixed
+  −100 to 0 dBFS color scale and at most 1,200 time columns. Adaptive hop covers
+  the selection's time extent but may skip intervening analysis windows. FFT size
+  and window are configurable; explicit hop, frequency range, magnitude/dB mode
+  and a selectable spectrogram region remain outstanding. Display magnitudes
+  do not retain the complex phase required for reconstruction.
+- **Live spectrogram:** eight seconds of rolling memory, at most 320 columns,
+  fixed 1,024-point FFT. Planned transform/frequency-range controls and sensitivity
+  where practical remain outstanding, along with physical microphone validation.
+
+### Approved next priorities
+
+Implement **7A → 7B → finish 8 → 9 → 10 → 11**, retain **12 as optional**, then
+complete **13 acceptance**. The original Phase 1–13 numbers and technical
+requirements below are retained. Phases 7A and 7B are explicitly planned desktop
+extensions; this dated roadmap update implements neither those features nor the
+identified defect repairs. Earlier bootstrap instructions are historical.
 
 ---
 
@@ -858,25 +954,24 @@ Correctness is more important than architectural sophistication.
 
 Create a professional but simple desktop UI.
 
-Suggested main layout:
+Current desktop layout (implemented; see the dated audit for evidence):
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ SonicCraft                                                   │
 ├──────────────────────────────────────────────────────────────┤
-│ File   Edit   Effects   Analysis   Tools                    │
+│ File   Edit   Effects   Analysis   View   Help                 │
 ├──────────────────────────────────────────────────────────────┤
-│ Open  Save  Undo  Redo  Play  Pause  Stop                   │
+│ Open  Export  Undo  Redo          Play/Pause  Stop             │
 ├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│                     WAVEFORM                                 │
-│                                                              │
-├──────────────────────────────────────────────────────────────┤
-│ Time / Selection                                             │
-├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│             Current analysis / effect panel                 │
-│                                                              │
+│ Tool Library        │              WAVEFORM                   │
+│ Category → Feature  │                                        │
+│ Back / All tools    ├────────────────────────────────────────┤
+│                     │ Time / Selection                       │
+│ Editing and effect  ├────────────────────────────────────────┤
+│ controls            │ FFT / Spectrogram / Live Spectrogram    │
+│                     │ / Filter response                      │
+│ Reset audio         │                                        │
 ├──────────────────────────────────────────────────────────────┤
 │ Status: filename | sample rate | channels | duration        │
 └──────────────────────────────────────────────────────────────┘
@@ -1166,7 +1261,11 @@ only when wavelet denoising is implemented.
 
 # 33. Implementation Order
 
-Follow this exact broad order unless repository conditions require a small adjustment.
+Phases 1–7 form the completed core baseline established by the dated audit above.
+The approved next order is **7A → 7B → finish 8 → 9 → 10 → 11**, with **12
+optional**, followed by **13 acceptance**. Requirements below remain acceptance
+targets; their presence alone is not a completion claim. Early-phase restrictions
+describe the original bootstrap sequence and do not reset the current project.
 
 ## Phase 1 — Foundation
 
@@ -1206,7 +1305,7 @@ Implement:
 * zoom
 * selection
 
-Do not implement DSP effects yet.
+Historical Phase 3 sequencing rule: DSP effects were deferred until Phase 4.
 
 ---
 
@@ -1264,7 +1363,69 @@ Do not start with the complicated algorithms.
 
 ---
 
+## Phase 7A — Stereo Channel Workspace
+
+**Planned; next desktop milestone.** Current stereo traces share a waveform
+axis, edits process both channels, and there are no independent channel controls.
+
+Implement:
+
+* separate Left and Right waveform lanes with clear labels and shared timing
+* linked editing by default and explicit unlinked channel selection/editing
+* per-channel gain, mute and solo with visible state
+* channel-aware FFT and spectrogram analysis with explicit Left/Right/combined mode
+* channel export with an explicit choice of source channel and output format
+
+Acceptance:
+
+* Use distinct known signals in Left/Right to prove unlinked edits change only
+  the targeted channel and linked edits affect both as specified.
+* Define alignment rules for duration-changing edits so channel lengths remain
+  valid and timing is predictable; test mono compatibility and undo/redo/reset.
+* Verify gain/mute/solo routing, channel-aware analysis and exported samples
+  against the chosen channel; include physical stereo-output validation.
+
+The existing stereo array shape and colored traces are not completion evidence
+for this milestone. Phase 8 correctness requirements remain outstanding even
+when analysis routing is added here.
+
+---
+
+## Phase 7B — Multitrack Mixing
+
+**Planned; follows 7A.** This is a new desktop milestone. The existing
+`mix_audio()` helper is DSP support, not an implemented multitrack workspace.
+
+Implement:
+
+* multiple imported tracks with persistent identity in the working session
+* timeline offsets and a clear shared time ruler
+* per-track levels, mute and solo
+* an explicit common sample-rate policy, with compatible channel layouts and
+  validated resampling when needed
+* combined playback of the audible tracks with consistent transport position
+* protected mixdown export using the existing mixing DSP, with visible clipping
+  detection and an explicit headroom/normalization choice before encoding
+
+Acceptance:
+
+* Test known tones/impulses on multiple tracks for accurate offsets, levels,
+  mute/solo behavior and output duration, including unequal track lengths.
+* Test mismatched sample rates/channel layouts against the documented conversion
+  policy; maintain alignment and show actionable errors for unsupported input.
+* Verify combined playback and export use the same routing and mix settings;
+  check clipping protection, exported sample rate/channels and source preservation.
+* Exercise desktop import-to-mixdown flow and physical combined playback before
+  calling the milestone fully accepted.
+
+---
+
 ## Phase 8 — FFT
+
+**Partial.** Existing plots and known-tone tests do not close the full-selection
+truncation and stereo dB/peak-label discrepancies reproduced in the audit above.
+Complete whole-signal/selection coverage and consistent channel-aware magnitude,
+dB and peak reporting, with regression tests for both reproduced cases.
 
 Implement:
 
@@ -1281,6 +1442,10 @@ Add automated tests.
 
 ## Phase 9 — Spectrogram
 
+**Partial.** File heatmaps, FFT-size/window controls and plot navigation exist.
+Finish explicit hop, frequency-range, magnitude/dB controls and spectrogram-region
+selection. The bounded display map is not a reconstruction representation.
+
 Implement:
 
 * STFT
@@ -1291,6 +1456,10 @@ Implement:
 ---
 
 ## Phase 10 — Spectrogram Editing / Reconstruction
+
+**DSP-only.** Complex STFT/ISTFT and numerical round-trip tests exist. Build the
+desktop masking/editing workflow, retain phase, and connect reconstructed audio
+to document history, playback and export before accepting this phase.
 
 Implement:
 
@@ -1307,6 +1476,11 @@ Test reconstruction.
 
 ## Phase 11 — Live Spectrogram
 
+**Partial; implemented ahead of sequence.** Start/stop, input buffering, rolling
+history and background display transforms exist. Finish planned FFT-size and
+frequency-range controls (sensitivity where practical), then validate real
+microphone operation and lifecycle behavior on physical devices.
+
 Implement:
 
 * microphone input
@@ -1319,6 +1493,9 @@ Implement:
 
 ## Phase 12 — Optional DSP Lab
 
+**DSP-only; optional.** Sampling, aliasing and convolution utilities/tests exist;
+the interactive educational workspace remains unimplemented.
+
 Only after everything above works:
 
 * sampling
@@ -1329,6 +1506,11 @@ Only after everything above works:
 ---
 
 ## Phase 13 — Final Integration
+
+**Pending.** Accept the completed 7A/7B desktop workflows and remaining required
+Phases 8–11, run integration/regression checks, and verify physical speaker and
+microphone operation. Record hardware results separately from simulated-stream
+tests. Optional Phase 12 does not block core acceptance.
 
 Check:
 
@@ -1457,7 +1639,11 @@ Do not attempt all of these in one giant implementation.
 
 ---
 
-# 38. First Task
+# 38. First Task — Historical Bootstrap Instructions
+
+This section records the original empty-repository bootstrap procedure. It has
+already been superseded by the dated audit and approved priorities in Section 33;
+it is not an instruction to restart the existing project at Phase 1.
 
 Your FIRST response/action should NOT attempt to implement all SonicCraft features.
 
@@ -1533,4 +1719,5 @@ Live Spectrogram
 
 The application should be stable, understandable, mathematically defensible, and easy to demonstrate in a university Signals & Systems presentation.
 
-**Start by inspecting the repository and implementing only Phase 1. Do not jump ahead.**
+**Continue from the verified Phase 7 baseline using the approved order in
+Section 33, beginning with planned Phase 7A.**

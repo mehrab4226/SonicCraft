@@ -77,6 +77,7 @@ class AudioData:
 class Document:
     def __init__(self):
         self.audio = None
+        self.original_audio = None
         self.saved_samples = None
         self.undo_stack = []
         self.redo_stack = []
@@ -87,6 +88,7 @@ class Document:
 
     def load(self, audio):
         self.audio = audio
+        self.original_audio = audio
         self.saved_samples = audio.samples
         self.undo_stack.clear()
         self.redo_stack.clear()
@@ -95,11 +97,24 @@ class Document:
         if self.audio is None:
             raise ValueError("Open audio first.")
         updated = AudioData(samples, self.audio.sample_rate, self.audio.filename)
+        self._remember_current()
+        self.audio = updated
+
+    def _remember_current(self):
         self.undo_stack.append(self.audio)
         self.redo_stack.clear()
         while len(self.undo_stack) > 20 or sum(x.samples.nbytes for x in self.undo_stack) > HISTORY_BYTES:
             self.undo_stack.pop(0)
-        self.audio = updated
+
+    @property
+    def can_reset(self):
+        return self.original_audio is not None and self.audio is not self.original_audio
+
+    def reset_to_original(self):
+        """Restore the loaded snapshot as an undoable edit, without rereading disk."""
+        if self.can_reset:
+            self._remember_current()
+            self.audio = self.original_audio
 
     def undo(self):
         if self.undo_stack:

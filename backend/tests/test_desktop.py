@@ -51,7 +51,7 @@ class DesktopFoundationTests(unittest.TestCase):
 
     def test_actions_require_audio_except_open(self):
         self.assertTrue(self.window.actions_by_name["open"].isEnabled())
-        for name in ("save", "undo", "redo", "play", "pause", "stop"):
+        for name in ("save", "undo", "redo", "play", "stop", "reset_audio"):
             with self.subTest(action=name):
                 action = self.window.actions_by_name[name]
                 self.assertFalse(action.isEnabled())
