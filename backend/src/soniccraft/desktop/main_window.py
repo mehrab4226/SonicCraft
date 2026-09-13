@@ -28,11 +28,8 @@ from .spectrogram_widget import SpectrogramWidget
 from .analysis import make_spectrogram
 
 class MainWindow(QMainWindow):
-    def __init__(self, *, limited_test_workspace=True):
+    def __init__(self):
         super().__init__()
-        # Temporary connection policy. Keep the full workflow available for
-        # regression tests and later reconnection without removing its code.
-        self.limited_test_workspace = limited_test_workspace
         self.setObjectName("soniccraftMainWindow")
         self.setWindowTitle("SonicCraft — Audio Editor")
         self.resize(1380, 960)
@@ -156,7 +153,7 @@ class MainWindow(QMainWindow):
         outer.setSpacing(16)
         self.effects = EffectsPanel(self)
         self.effects.hide()
-        self.sidebar = FeatureSidebar(self.effects, limited_test_workspace=self.limited_test_workspace)
+        self.sidebar = FeatureSidebar(self.effects)
         self.reset_button = QToolButton()
         self.reset_button.setDefaultAction(self.actions_by_name["reset_audio"])
         self.reset_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -272,40 +269,21 @@ class MainWindow(QMainWindow):
         self.spectrogram_widget = SpectrogramWidget()
         self.live_spectrogram = SpectrogramWidget(live=True)
         self.live_spectrogram.stop_requested.connect(self.stop_live)
-        for widget, title in (
-            (self.spectrum_widget, "Spectrum Analyzer"),
-            (self.spectrogram_widget, "Spectrogram"),
-            (self.live_spectrogram, "Live Spectrogram"),
-            (self.effects.response, "Filter Response"),
-        ):
-            if self.limited_test_workspace:
-                widget.setParent(self.analysis_panel)
-                widget.hide()
-                widget.setEnabled(False)
-                placeholder = QLabel(f"{title}\n\nPlaceholder · temporarily disconnected for testing.")
-                placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                placeholder.setWordWrap(True)
-                self.analysis_tabs.addTab(placeholder, title)
-                self.analysis_tabs.setTabToolTip(self.analysis_tabs.count() - 1, "Placeholder — temporarily disconnected for testing")
-            else:
-                self.analysis_tabs.addTab(widget, title)
+        self.analysis_tabs.addTab(self.spectrum_widget, "Spectrum Analyzer")
+        self.analysis_tabs.addTab(self.spectrogram_widget, "Spectrogram")
+        self.analysis_tabs.addTab(self.live_spectrogram, "Live Spectrogram")
+        self.analysis_tabs.addTab(self.effects.response, "Filter Response")
         analysis_layout.addWidget(self.analysis_tabs)
         self.analysis_tabs.currentChanged.connect(self._analysis_tab_changed)
+        self.sidebar.analysis_requested.connect(self.show_analysis)
+        self.sidebar.spectrogram_requested.connect(self.generate_spectrogram)
+        self.sidebar.fft_size.currentIndexChanged.connect(lambda: self.spectrogram_widget.clear("FFT size changed. Generate a new spectrogram."))
+        self.sidebar.window_function.currentIndexChanged.connect(lambda: self.spectrogram_widget.clear("Window changed. Generate a new spectrogram."))
+        self.sidebar.live_start_requested.connect(self.start_live)
+        self.sidebar.live_stop_requested.connect(self.stop_live)
         self.effects.requested.connect(self.apply_operation)
-        if not self.limited_test_workspace:
-            self.sidebar.analysis_requested.connect(self.show_analysis)
-            self.sidebar.spectrogram_requested.connect(self.generate_spectrogram)
-            self.sidebar.fft_size.currentIndexChanged.connect(lambda: self.spectrogram_widget.clear("FFT size changed. Generate a new spectrogram."))
-            self.sidebar.window_function.currentIndexChanged.connect(lambda: self.spectrogram_widget.clear("Window changed. Generate a new spectrogram."))
-            self.sidebar.live_start_requested.connect(self.start_live)
-            self.sidebar.live_stop_requested.connect(self.stop_live)
-            self.effects.preview_requested.connect(self.preview_filter)
-            self.effects.profile_requested.connect(self.capture_profile)
-            self.effects.noise_requested.connect(self.apply_operation)
-        else:
-            for control in self.effects.response_buttons:
-                control.setEnabled(False)
-                control.setToolTip("Filter Response is a placeholder during testing.")
+        self.effects.preview_requested.connect(self.preview_filter)
+        self.effects.profile_requested.connect(self.capture_profile)
         self.splitter.addWidget(self.analysis_panel)
         self.splitter.setSizes([350, 350])
         self.layout.addWidget(self.splitter, 1)
@@ -329,7 +307,7 @@ class MainWindow(QMainWindow):
         self.busy_indicator.hide()
         self.transport_status = label("●  IDLE", "eyebrow")
         self.statusBar().addPermanentWidget(self.transport_status)
-        self.actions_by_name["spectrum"].setChecked(not self.limited_test_workspace)
+        self.actions_by_name["spectrum"].setChecked(True)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -381,16 +359,12 @@ class MainWindow(QMainWindow):
         self.sidebar.navigate("spectrum")
 
     def show_analysis(self, mode):
-        if self.limited_test_workspace:
-            return
         self.analysis_tabs.setCurrentIndex({"spectrum": 0, "spectrogram": 1, "live": 2, "response": 3}[mode])
         self.actions_by_name["spectrum"].setChecked(mode == "spectrum")
         if mode == "spectrum":
             self.update_spectrum()
 
     def _analysis_tab_changed(self, index):
-        if self.limited_test_workspace:
-            return
         self.actions_by_name["spectrum"].setChecked(index == 0)
         if index != 2:
             self.stop_live()
@@ -399,8 +373,6 @@ class MainWindow(QMainWindow):
 
     def update_spectrum(self):
         """Runs the FFT math and pushes data to the UI widget."""
-        if self.limited_test_workspace:
-            return
         if self.document.audio is None or self.analysis_tabs.currentIndex() != 0:
             return
             
@@ -429,8 +401,6 @@ class MainWindow(QMainWindow):
             self.spectrum_widget.info_label.setText(f"Cannot analyze selection: {error}")
 
     def generate_spectrogram(self):
-        if self.limited_test_workspace:
-            return
         audio = self.document.audio
         if audio is None:
             return
@@ -447,8 +417,6 @@ class MainWindow(QMainWindow):
         ), self.spectrogram_widget.set_data)
 
     def start_live(self):
-        if self.limited_test_workspace:
-            return
         self.show_analysis("live")
         self.stop()
         self.stop_live()
@@ -480,8 +448,6 @@ class MainWindow(QMainWindow):
             self.live_spectrogram.info_label.setText("Monitoring stopped · last captured view retained.")
 
     def _live_tick(self):
-        if self.limited_test_workspace:
-            return
         if self.microphone.stream is None:
             return
         if not self.microphone.stream.active:
@@ -519,10 +485,6 @@ class MainWindow(QMainWindow):
         self.live_job = None
 
     def apply_operation(self, operation, parameters):
-        if self.limited_test_workspace and operation not in (
-            "trim", "delete", "reverse", "normalize", "silence", "gain", "fade", "filter", "eq"
-        ):
-            return
         audio = self.document.audio
         if audio is None:
             return
@@ -535,8 +497,6 @@ class MainWindow(QMainWindow):
         self.run_job(operation.title(), lambda: process(audio, bounds, operation, parameters), self._edited)
 
     def preview_filter(self, operation, parameters):
-        if self.limited_test_workspace:
-            return
         audio = self.document.audio
         if audio is None:
             return
@@ -549,8 +509,6 @@ class MainWindow(QMainWindow):
         ), display)
 
     def capture_profile(self):
-        if self.limited_test_workspace:
-            return
         audio = self.document.audio
         if audio is None:
             return
@@ -793,10 +751,6 @@ class MainWindow(QMainWindow):
         states["redo"] = ready and bool(self.document.redo_stack)
         states["reset_audio"] = ready and self.document.can_reset
         states["stop"] = self.player.stream is not None
-        if self.limited_test_workspace:
-            for name in ("noise_panel", "spectrum", "spectrogram", "live_spectrogram"):
-                states[name] = False
-                self.actions_by_name[name].setToolTip("Placeholder — temporarily disconnected for testing")
         for name, enabled in states.items():
             self.actions_by_name[name].setEnabled(enabled)
         playing = self.player.active

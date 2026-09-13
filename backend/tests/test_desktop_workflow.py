@@ -124,8 +124,7 @@ class WorkflowTests(unittest.TestCase):
         cls.app = create_application([])
 
     def setUp(self):
-        # Exercise the retained full workflow, including noise and response DSP.
-        self.window = MainWindow(limited_test_workspace=False)
+        self.window = MainWindow()
         self.window.show()
         self.folder = tempfile.TemporaryDirectory()
         self.errors = []
