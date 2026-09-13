@@ -102,7 +102,7 @@ class WorkspaceTests(unittest.TestCase):
         effects.filter_kind.setCurrentIndex(0)
         self.assertFalse(effects.high.isEnabled())
 
-    def test_space_shortcut_and_spectrum_toggle(self):
+    def test_space_shortcut_and_spectrum_placeholder(self):
         self.load_audio()
         self.window.activateWindow()
         self.window.waveform.setFocus()
@@ -115,8 +115,9 @@ class WorkspaceTests(unittest.TestCase):
             pause.assert_called_once()
         action = self.window.actions_by_name["spectrum"]
         action.trigger()
-        self.assertTrue(action.isChecked())
-        self.assertIsNotNone(self.window.spectrum_widget.current_spectrum)
+        self.assertFalse(action.isEnabled())
+        self.assertFalse(action.isChecked())
+        self.assertIsNone(self.window.spectrum_widget.current_spectrum)
         self.window.show_analysis("spectrogram")
         self.assertFalse(action.isChecked())
 

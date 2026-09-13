@@ -39,12 +39,14 @@ def field(layout, title, widget):
 class EffectsPanel(QWidget):
     """Build reusable control cards; the sidebar owns their visible pages."""
     requested = pyqtSignal(str, object)
+    noise_requested = pyqtSignal(str, object)
     preview_requested = pyqtSignal(str, object)
     profile_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.groups = []
+        self.response_buttons = []
         self._editing()
         self._filters()
         self._noise()
@@ -137,7 +139,7 @@ class EffectsPanel(QWidget):
         row = QHBoxLayout()
         self.filter_button = button(row, "Apply filter", lambda: self.requested.emit("filter", self.filter_parameters()))
         self.filter_button.setProperty("primary", True)
-        button(row, "Response", lambda: self.preview_requested.emit("filter", self.filter_parameters()))
+        self.response_buttons.append(button(row, "Response", lambda: self.preview_requested.emit("filter", self.filter_parameters())))
         filters.addLayout(row)
         filters.addStretch()
         self.filter_kind.currentIndexChanged.connect(self._update_filter_fields)
@@ -176,7 +178,7 @@ class EffectsPanel(QWidget):
         row = QVBoxLayout()
         self.eq_button = button(row, "Apply EQ", lambda: self.requested.emit("eq", self.eq_parameters()))
         self.eq_button.setProperty("primary", True)
-        button(row, "Response", lambda: self.preview_requested.emit("eq", self.eq_parameters()))
+        self.response_buttons.append(button(row, "Response", lambda: self.preview_requested.emit("eq", self.eq_parameters())))
         button(row, "Reset", self.reset_eq)
         equalizer.addLayout(row)
         layout.addWidget(eq_card, 5)
@@ -258,4 +260,4 @@ class EffectsPanel(QWidget):
         params = self.filter_parameters() if operation == "filter" else {
             "strength": self.noise_strength.value(), "window_size": self.wiener_window.value(),
         }
-        self.requested.emit(operation, params)
+        self.noise_requested.emit(operation, params)

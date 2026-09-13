@@ -7,6 +7,20 @@ contact an external service.
 
 ## Current desktop features
 
+**Temporary testing configuration — 2026-09-13:** the default desktop connects
+only **Edit & Dynamics** and **Filters & Equalizer** from the Tool Library.
+Noise Reduction, Spectrum Analyzer, Spectrogram and Live Spectrogram remain
+visible as disabled placeholders. All four lower analysis tabs, including Filter
+Response, show placeholders; response-preview buttons and related menu/toolbar
+actions are disconnected too. Opening/exporting audio, transport, waveform
+selection, undo/redo and Reset audio remain available.
+
+The implementations below are preserved. Automatic selection FFT, noise jobs,
+response previews and microphone monitoring do not run in this configuration.
+`MainWindow(limited_test_workspace=False)` retains the full wiring for regression
+tests and later reconnection; the normal launcher uses the limited default.
+This temporary configuration does not change the audited roadmap baseline.
+
 **Verified baseline — 2026-09-12: Phase 7 — Noise Reduction is the last
 consecutively completed core milestone.** Phases 1–7 provide the desktop lifecycle,
 audio I/O, metadata, transport, waveform/selection, sample editing, gain/fades,

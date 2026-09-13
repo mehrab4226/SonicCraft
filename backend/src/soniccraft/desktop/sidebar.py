@@ -21,8 +21,9 @@ class FeatureSidebar(QFrame):
     live_start_requested = pyqtSignal()
     live_stop_requested = pyqtSignal()
 
-    def __init__(self, effects, parent=None):
+    def __init__(self, effects, parent=None, *, limited_test_workspace=True):
         super().__init__(parent)
+        self.limited_test_workspace = limited_test_workspace
         self.setObjectName("sidebar")
         self.setMinimumWidth(290)
         self.setMaximumWidth(360)
@@ -51,6 +52,9 @@ class FeatureSidebar(QFrame):
             control.setObjectName("categoryButton")
             control.setAccessibleName(title)
             self.category_buttons[key] = control
+            if self.limited_test_workspace and key not in ("edit", "filters"):
+                control.setEnabled(False)
+                control.setToolTip("Placeholder — temporarily disconnected for testing")
         home.addStretch()
 
         edit = self._page("edit", "Edit & Dynamics", "home")
@@ -127,6 +131,10 @@ class FeatureSidebar(QFrame):
         self.live_stop = button(live, "Stop monitoring", self.live_stop_requested.emit)
         self.set_monitoring(False)
         live.addStretch()
+        if self.limited_test_workspace:
+            for key in ("noise", "profile", "reduction", "spectrum", "spectrogram", "live"):
+                self.routes[key][0].setEnabled(False)
+            self.hint.setText("Testing: Edit & Dynamics and Filters & Equalizer are connected.")
         self.navigate("home")
 
     def _page(self, key, title, parent=None):
@@ -146,6 +154,8 @@ class FeatureSidebar(QFrame):
         self.feature_buttons[key] = button(layout, title + "   ›", lambda: self.navigate(destination))
 
     def navigate(self, key):
+        if self.limited_test_workspace and key in ("noise", "profile", "reduction", "spectrum", "spectrogram", "live"):
+            return
         page, title = self.routes[key]
         self.current_route = key
         self.stack.setCurrentWidget(page)
@@ -154,6 +164,8 @@ class FeatureSidebar(QFrame):
         self.back_button.setVisible(parent is not None)
         self.back_button.setText("‹  All tools" if parent == "home" else "‹  Back to category")
         self.hint.setText("Choose a category to reveal its tools." if key == "home" else "Effects apply to your waveform selection.\nCtrl+Z to undo.")
+        if self.limited_test_workspace and key == "home":
+            self.hint.setText("Testing: Edit & Dynamics and Filters & Equalizer are connected.")
         if key in ("spectrum", "spectrogram", "live"):
             self.hint.setText("Analysis occupies the lower workspace.")
             self.analysis_requested.emit(key)

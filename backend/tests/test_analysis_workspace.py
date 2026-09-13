@@ -43,7 +43,8 @@ class AnalysisWorkspaceTests(unittest.TestCase):
         cls.app = create_application([])
 
     def setUp(self):
-        self.window = MainWindow()
+        # Retain coverage of the disconnected implementation for reconnection.
+        self.window = MainWindow(limited_test_workspace=False)
         self.window.show()
         self.app.processEvents()
         self.errors = []
