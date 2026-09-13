@@ -17,6 +17,27 @@ from soniccraft.desktop.audio_engine import Player
 
 
 class DocumentTests(unittest.TestCase):
+    def test_open_and_edit_audio_above_previous_decoded_size_limit(self):
+        # A float32 WAV expands beyond 64 MiB when decoded to float64.
+        frames = (64 * 1024 * 1024) // (2 * 8) + 1
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "large-stereo.wav"
+            samples = np.zeros((frames, 2), dtype=np.float32)
+            samples[-1] = [.25, -.5]
+            sf.write(path, samples, 48000, subtype="FLOAT")
+            del samples
+            audio = AudioData.open(path)
+            self.assertGreater(audio.samples.nbytes, 64 * 1024 * 1024)
+            self.assertEqual(audio.samples.shape, (frames, 2))
+            self.assertEqual(audio.sample_rate, 48000)
+            np.testing.assert_array_equal(audio.samples[-1], [.25, -.5])
+            doc = Document()
+            doc.load(audio)
+            doc.commit(audio.samples[::-1])
+            np.testing.assert_array_equal(doc.audio.samples[0], [.25, -.5])
+            doc.undo()
+            self.assertIs(doc.audio, audio)
+
     def test_original_reset_survives_history_eviction_and_export(self):
         doc = Document()
         original = AudioData(np.linspace(-.5, .5, 100), 8000)

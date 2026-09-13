@@ -8,7 +8,6 @@ import numpy as np
 
 from soniccraft.audio_io import inspect_audio, load_audio, save_audio
 
-MAX_AUDIO_BYTES = 64 * 1024 * 1024
 HISTORY_BYTES = 128 * 1024 * 1024
 
 
@@ -24,8 +23,6 @@ class AudioData:
             raise ValueError("Audio must contain at least one sample.")
         if data.ndim == 2 and data.shape[1] not in (1, 2):
             raise ValueError("Only mono and stereo files are supported.")
-        if data.nbytes > MAX_AUDIO_BYTES:
-            raise ValueError("Decoded audio exceeds the 64 MiB editor limit. Open a shorter clip.")
         if not np.all(np.isfinite(data)):
             raise ValueError("Audio contains non-finite samples.")
         if self.sample_rate <= 0 or int(self.sample_rate) != self.sample_rate:
@@ -48,8 +45,8 @@ class AudioData:
     @classmethod
     def open(cls, path):
         info = inspect_audio(path)
-        if info.channels not in (1, 2) or info.frames * info.channels * 8 > MAX_AUDIO_BYTES:
-            raise ValueError("Open a mono/stereo file smaller than 64 MiB when decoded.")
+        if info.channels not in (1, 2):
+            raise ValueError("Only mono and stereo files are supported.")
         samples, rate = load_audio(path)
         return cls(samples, rate, str(path))
 

@@ -51,8 +51,9 @@ samples retain headroom for clipping detection before encoding. The
 [document](../backend/src/soniccraft/desktop/document.py) keeps the current audio,
 original loaded audio and undo/redo snapshots. Reset audio restores the original,
 selects its full range and is itself undoable; it does not modify exported files.
-Decoded documents are limited to 64 MiB; ordinary history is bounded to 20 entries
-and 128 MiB, with the original snapshot retained separately for reset.
+Decoded documents have no fixed size cap; audio is held in memory and depends on
+available RAM. Ordinary history is bounded to 20 entries and 128 MiB, with the
+original snapshot retained separately for reset.
 
 [Processing adapters](../backend/src/soniccraft/desktop/processing.py) apply sample
 edits, gain/fades, filters, EQ and noise reduction through the shared DSP core.
