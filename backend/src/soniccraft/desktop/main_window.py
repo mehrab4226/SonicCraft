@@ -22,7 +22,7 @@ from .processing import process, sample_range, filter_sections, check_transform_
 from soniccraft.dsp.filters import frequency_response
 from soniccraft.dsp.noise_reduction import estimate_noise_profile
 from .spectrum_widget import SpectrumWidget
-from soniccraft.dsp.transforms import fft_spectrum
+from soniccraft.dsp.transforms import fft_spectrum, image_to_audio
 from .theme import label, icon, FileTitle
 from .sidebar import FeatureSidebar
 from .spectrogram_widget import SpectrogramWidget
@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
 
     def _build_actions(self):
         self._action("open", "&Open audio…", self.open_dialog, QKeySequence.StandardKey.Open)
+        self._action("import_image", "Import Spectrogram Image...", self.import_image_dialog)
         self._action("save", "&Export audio…", self.save_dialog, QKeySequence.StandardKey.Save)
         self._action("play", "&Play", self.toggle_playback, "Space")
         self.addAction(self.actions_by_name["play"])
@@ -100,7 +101,7 @@ class MainWindow(QMainWindow):
     def _build_menus(self):
         self.menus = {}
         for title, names in (
-            ("&File", ("open", "save", "exit")),
+            ("&File", ("open", "import_image", "save", "exit")),
             ("&Edit", ("undo", "redo", "reset_audio", "trim", "delete", "reverse", "silence")),
             ("&Effects", ("normalize", "volume_panel", "eq_panel", "noise_panel")), ("&Analysis", ("spectrum", "spectrogram", "live_spectrogram")),
             ("&View", ("reset_view", "zoom_selection", "devices")), ("&Help", ("about",)),
@@ -593,6 +594,21 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.open_path(path)
+
+    def import_image_dialog(self):
+        if not self.confirm_discard():
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import spectrogram image", "", "Images (*.png *.jpg *.bmp)"
+        )
+        if path:
+            self.run_job("Importing spectrogram image", lambda: self._load_image_audio(path), self._loaded)
+
+    @staticmethod
+    def _load_image_audio(path):
+        sample_rate = 44_100
+        samples = image_to_audio(path, sample_rate)
+        return AudioData(samples, sample_rate, "Imported Spectrogram")
 
     def open_path(self, path):
         self.run_job("Opening audio", lambda: AudioData.open(path), self._loaded)

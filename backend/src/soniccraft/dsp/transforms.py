@@ -7,6 +7,7 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from PIL import Image
 from scipy.signal import get_window
 
 from ._validation import as_audio_array, validate_positive_int, validate_sample_rate
@@ -339,3 +340,26 @@ def griffin_lim(
         phase = rebuilt / np.maximum(np.abs(rebuilt), np.finfo(np.float64).eps)
     peak = float(np.max(np.abs(estimate)))
     return estimate / peak if peak > 1.0 else estimate
+
+
+def image_to_audio(
+    image_path: str,
+    sample_rate: float,
+    n_fft: int = 2048,
+    iterations: int = 32,
+) -> FloatArray:
+    """Reconstruct mono audio from a grayscale spectrogram image."""
+
+    size = validate_positive_int(n_fft, name="n_fft")
+    if size < 2:
+        raise ValueError("n_fft must be at least 2")
+    with Image.open(image_path) as image:
+        grayscale = image.convert("L")
+        resized = grayscale.resize((grayscale.width, size // 2 + 1), Image.Resampling.BILINEAR)
+        magnitude = np.asarray(resized, dtype=np.float64) / 255.0
+    return griffin_lim(
+        np.flipud(magnitude),
+        sample_rate,
+        n_fft=size,
+        iterations=iterations,
+    )
