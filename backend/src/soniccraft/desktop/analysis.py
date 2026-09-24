@@ -6,6 +6,7 @@ from soniccraft.dsp.transforms import fft_spectrum
 
 @dataclass(frozen=True)
 class SpectrogramData:
+    magnitude: np.ndarray
     values: np.ndarray
     duration: float
     sample_rate: int
@@ -32,10 +33,12 @@ def make_spectrogram(samples, sample_rate, n_fft=2048, window="hann", *, offset=
     hop = max(n_fft // 4, int(np.ceil(len(audio) / (max_frames - 1))))
     centers = np.arange(0, len(audio) + 1, hop)
     padded = np.pad(audio, (n_fft // 2, n_fft))
-    values = np.empty((n_fft // 2 + 1, len(centers)), dtype=np.float32)
+    magnitude = np.empty((n_fft // 2 + 1, len(centers)), dtype=np.float32)
+    values = np.empty_like(magnitude)
     for first in range(0, len(centers), 32):
         starts = centers[first:first + 32]
         frames = np.stack([padded[start:start + n_fft] for start in starts], axis=1)
         result = fft_spectrum(frames, sample_rate, n_fft=n_fft, window=window, remove_dc=False)
+        magnitude[:, first:first + len(starts)] = result.magnitude
         values[:, first:first + len(starts)] = result.magnitude_db
-    return SpectrogramData(values, duration, sample_rate, n_fft, hop, offset)
+    return SpectrogramData(magnitude, values, duration, sample_rate, n_fft, hop, offset)

@@ -2,6 +2,7 @@
 from pathlib import Path
 import math
 import numpy as np
+from scipy.signal import resample
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
@@ -385,17 +386,19 @@ class MainWindow(QMainWindow):
                 self.spectrum_widget.current_spectrum = None
                 self.spectrum_widget.info_label.setText("Select at least two samples for FFT analysis.")
                 return
-                
-            # Limit the analysis to a chunk of samples so the GUI never freezes.
-            # 65536 samples gives ultra-high resolution without lagging the drag-selection.
+
+            selection_size = len(self.document.audio.samples[start:end])
             samples = self.document.audio.samples[start:end]
-            if len(samples) > 65536:
-                samples = samples[:65536]
-                
-            # Run the FFT!
+            if len(samples) > 131072:
+                samples = resample(samples, 131072, axis=0)
+
             spectrum = fft_spectrum(samples, self.document.audio.sample_rate)
             self.spectrum_widget.set_spectrum(spectrum)
-            self.sidebar.spectrum_scope.setText(f"Analyzing {len(samples):,} samples from {start / self.document.audio.sample_rate:.3f} s.\nFFT view is limited to the first 65,536 selected samples.")
+            detail = f"resampled to {len(samples):,} points for display" if len(samples) != selection_size else "full resolution"
+            self.sidebar.spectrum_scope.setText(
+                f"Analyzing {selection_size:,} selected samples from "
+                f"{start / self.document.audio.sample_rate:.3f} s ({detail})."
+            )
             
         except Exception as error:
             self.spectrum_widget.info_label.setText(f"Cannot analyze selection: {error}")
