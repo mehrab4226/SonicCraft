@@ -27,6 +27,8 @@ from .theme import label, icon, FileTitle
 from .sidebar import FeatureSidebar
 from .spectrogram_widget import SpectrogramWidget
 from .analysis import make_spectrogram
+from .mixer_widget import MultitrackMixer
+from soniccraft.dsp.effects import mix_audio
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -277,11 +279,13 @@ class MainWindow(QMainWindow):
         self.spectrum_widget = SpectrumWidget()
         self.spectrogram_widget = SpectrogramWidget()
         self.live_spectrogram = SpectrogramWidget(live=True)
+        self.mixer = MultitrackMixer()
         self.live_spectrogram.stop_requested.connect(self.stop_live)
         self.analysis_tabs.addTab(self.spectrum_widget, "Spectrum Analyzer")
         self.analysis_tabs.addTab(self.spectrogram_widget, "Spectrogram")
         self.analysis_tabs.addTab(self.live_spectrogram, "Live Spectrogram")
         self.analysis_tabs.addTab(self.effects.response, "Filter Response")
+        self.analysis_tabs.addTab(self.mixer, "Multitrack Mixer")
         analysis_layout.addWidget(self.analysis_tabs)
         self.analysis_tabs.currentChanged.connect(self._analysis_tab_changed)
         self.sidebar.analysis_requested.connect(self.show_analysis)
@@ -291,6 +295,7 @@ class MainWindow(QMainWindow):
         self.sidebar.window_function.currentIndexChanged.connect(lambda: self.spectrogram_widget.clear("Window changed. Generate a new spectrogram."))
         self.sidebar.live_start_requested.connect(self.start_live)
         self.sidebar.live_stop_requested.connect(self.stop_live)
+        self.mixer.mixdown_requested.connect(self._perform_mixdown)
         self.effects.requested.connect(self.apply_operation)
         self.effects.preview_requested.connect(self.preview_filter)
         self.effects.profile_requested.connect(self.capture_profile)
@@ -454,6 +459,13 @@ class MainWindow(QMainWindow):
             return result
 
         self.run_job("Applying spectral mask", worker, self._edited)
+
+    def _perform_mixdown(self, tracks, rate):
+        def loaded(mixed_samples):
+            self.document.load(AudioData(mixed_samples, rate, "Master Mixdown"))
+            self.refresh()
+
+        self.run_job("Mixing tracks", lambda: mix_audio(tracks, rate), loaded)
 
     def start_live(self):
         self.live_recording_buffer = np.empty(0)

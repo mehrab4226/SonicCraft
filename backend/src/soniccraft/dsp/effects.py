@@ -110,14 +110,45 @@ def concatenate_audio(clips: Sequence[ArrayLike]) -> NDArray[np.float64]:
     return restore_channels(output, channels == 1 and all(item.ndim == 1 for item in converted))
 
 
+def _mix_track_dicts(tracks: Sequence[dict], target_rate: int) -> NDArray[np.float64]:
+    if not tracks:
+        raise ValueError("tracks must contain at least one audio array")
+    if isinstance(target_rate, bool) or int(target_rate) != target_rate or target_rate <= 0:
+        raise ValueError("target_rate must be a positive integer")
+
+    active = [track for track in tracks if not track["mute"]]
+    if not active:
+        raise ValueError("at least one track must be unmuted")
+    converted = [as_audio_array(track["samples"], name="track samples") for track in active]
+    channels = 2 if any(samples.ndim == 2 for samples in converted) else 1
+    offsets = [int(float(track["offset"]) * target_rate) for track in active]
+    if any(offset < 0 for offset in offsets):
+        raise ValueError("track offsets must be non-negative")
+    output_length = max(offset + len(samples) for offset, samples in zip(offsets, converted, strict=True))
+    output = np.zeros((output_length, channels), dtype=np.float64) if channels == 2 else np.zeros(output_length, dtype=np.float64)
+    for track, samples, offset in zip(active, converted, offsets, strict=True):
+        scaled = samples * float(track["volume"])
+        if channels == 2 and scaled.ndim == 1:
+            scaled = scaled[:, None]
+        output[offset : offset + len(samples)] += scaled
+    peak = float(np.max(np.abs(output)))
+    if peak > 1.0:
+        output /= peak
+    return output
+
+
 def mix_audio(
-    tracks: Sequence[ArrayLike],
+    tracks: Sequence[ArrayLike] | Sequence[dict],
+    target_rate: int | None = None,
     *,
     offsets: Sequence[int] | None = None,
     gains_db: Sequence[float] | None = None,
     normalize: bool = False,
 ) -> NDArray[np.float64]:
-    """Mix tracks at sample offsets, with mono-to-multichannel broadcasting."""
+    """Mix legacy array tracks or timeline-aware multitrack dictionaries."""
+
+    if target_rate is not None:
+        return _mix_track_dicts(tracks, target_rate)
 
     if not tracks:
         raise ValueError("tracks must contain at least one audio array")
