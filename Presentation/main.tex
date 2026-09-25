@@ -1,0 +1,111 @@
+\documentclass[11pt, aspectratio=169]{beamer}
+\usetheme{metropolis}
+\usepackage{amsmath}
+
+\setbeamerfont{title}{size=\Large, series=\bfseries}
+\setbeamerfont{author}{size=\small}
+\setbeamerfont{subtitle}{size=\normalsize}
+
+\title{SonicCraft}
+\subtitle{An Interactive Python Desktop Suite for Signal Analysis}
+\author{Md Mehrab Hossain (2305108) \& Mahbubul Islam Mahi (2305115)}
+\date{27 September 2026}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+
+% ==========================================
+% PART 1: MEHRAB
+% ==========================================
+\begin{frame}[standout]
+  Part 1: System Architecture \& Time-Domain \\
+  \vspace{0.5em}
+  \large Presenter: Md Mehrab Hossain \\
+  \normalsize ID: 2305108
+\end{frame}
+
+\begin{frame}{Project Overview}
+  \begin{itemize}[<+->]
+    \item \textbf{Core Philosophy:} SonicCraft bridges foundational Signals \& Systems theory with a real-time, responsive desktop interface.
+    \item \textbf{Decoupled Architecture:} The PyQt6 GUI presentation layer is strictly separated from the non-blocking NumPy/SciPy DSP execution core.
+    \item \textbf{Presentation Flow:} We will cover Time-Domain operations first, followed by advanced Frequency-Domain transformations and spectral editing.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Time-Domain Operations \& LTI Systems}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \textbf{Discrete Signal Manipulation}
+      \begin{itemize}[<+->]
+        \item Audio is loaded as discrete-time arrays via SoundFile.
+        \item Amplitude scaling and envelope fading via element-wise array multiplication.
+      \end{itemize}
+    \end{column}
+    
+    \begin{column}{0.5\textwidth}
+      \textbf{Digital LTI Filtering}
+      \begin{itemize}[<+->]
+        \item 9-Band Parametric EQ and standard IIR/FIR filters (SciPy).
+        \item Represented by the linear difference equation:
+      \end{itemize}
+      \vspace{0.5em}
+      \uncover<3->{
+        \[ \sum_{k=0}^{N} a_k y[n-k] = \sum_{m=0}^{M} b_m x[n-m] \]
+      }
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ==========================================
+% PART 2: MAHI
+% ==========================================
+\begin{frame}[standout]
+  Part 2: Frequency-Domain \& Spectral Editing \\
+  \vspace{0.5em}
+  \large Presenter: Mahbubul Islam Mahi \\
+  \normalsize ID: 2305115
+\end{frame}
+
+\begin{frame}{Frequency-Domain Analysis}
+  \textbf{Fast Fourier Transform (FFT)} \\
+  Converts continuous-time theory into discrete computational bins to identify dominant frequencies in real-time.
+  \[ X[k] = \sum_{n=0}^{N-1} x[n] e^{-j 2\pi k n / N} \]
+  
+  \pause
+  \vspace{0.5em}
+  \textbf{Short-Time Fourier Transform (STFT)} \\
+  \begin{itemize}[<+->]
+    \item Chops audio into windowed, overlapping blocks to create a 2D matrix (Time vs. Frequency vs. Magnitude).
+    \item Visualized in the UI as an interactive Spectrogram heatmap.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Advanced DSP \& Spectral Editing}
+  \begin{itemize}[<+->]
+    \item \textbf{Spectral Masking:} Users can draw a bounding box over specific time/frequency coordinates on the Spectrogram to mathematically zero-out unwanted frequencies.
+    \item \textbf{Image-to-Audio Reconstruction:} Uses PIL to read grayscale images, map pixels to frequency bins, and apply the Griffin-Lim algorithm to synthesize playable audio arrays.
+    \item \textbf{Inverse STFT:} Both processes utilize the Inverse STFT to rebuild modified magnitude spectra back into a 1D time-domain waveform.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Interactive Workflow (Demo)}
+  \begin{center}
+    % UNCOMMENT AND ADD YOUR SCREENSHOT HERE
+    % \includegraphics[width=0.8\textwidth]{demo_screenshot.png}
+    \vspace{2em}
+    \textit{[ Insert Live UI Screenshot Here ]} \\
+    \vspace{1em}
+    Demonstrating the resizable QSplitter layout with \\ the Waveform on top and the Spectrogram analyzer below.
+  \end{center}
+\end{frame}
+
+\begin{frame}[standout]
+  Thank You! \\
+  \vspace{0.5em}
+  \large Questions \& Answers
+\end{frame}
+
+\end{document}
