@@ -38,3 +38,6 @@ htmlcov/
 tempCodeRunnerFile.py
 .DS_Store
 Thumbs.db
+build/
+dist/
+*.spec
