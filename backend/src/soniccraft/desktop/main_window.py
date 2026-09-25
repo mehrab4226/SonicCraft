@@ -22,7 +22,7 @@ from .processing import process, sample_range, filter_sections, check_transform_
 from soniccraft.dsp.filters import frequency_response
 from soniccraft.dsp.noise_reduction import estimate_noise_profile
 from .spectrum_widget import SpectrumWidget
-from soniccraft.dsp.transforms import fft_spectrum, image_to_audio
+from soniccraft.dsp.transforms import fft_spectrum, image_to_audio, stft, inverse_stft
 from .theme import label, icon, FileTitle
 from .sidebar import FeatureSidebar
 from .spectrogram_widget import SpectrogramWidget
@@ -279,6 +279,7 @@ class MainWindow(QMainWindow):
         self.analysis_tabs.currentChanged.connect(self._analysis_tab_changed)
         self.sidebar.analysis_requested.connect(self.show_analysis)
         self.sidebar.spectrogram_requested.connect(self.generate_spectrogram)
+        self.spectrogram_widget.mask_requested.connect(self._apply_spectral_mask)
         self.sidebar.fft_size.currentIndexChanged.connect(lambda: self.spectrogram_widget.clear("FFT size changed. Generate a new spectrogram."))
         self.sidebar.window_function.currentIndexChanged.connect(lambda: self.spectrogram_widget.clear("Window changed. Generate a new spectrogram."))
         self.sidebar.live_start_requested.connect(self.start_live)
@@ -419,6 +420,33 @@ class MainWindow(QMainWindow):
         self.run_job("Generating spectrogram", lambda: make_spectrogram(
             audio.samples[start:end], audio.sample_rate, size, window, offset=start / audio.sample_rate
         ), self.spectrogram_widget.set_data)
+
+    def _apply_spectral_mask(self, t_start, t_end, f_start, f_end):
+        audio = self.document.audio
+        if audio is None:
+            return
+        try:
+            start, end = self.playback_range()
+        except ValueError as error:
+            self.error(error)
+            return
+
+        samples = audio.samples[start:end]
+        selection_offset = start / audio.sample_rate
+
+        def worker():
+            transform = stft(samples, audio.sample_rate, n_fft=2048)
+            time_start = t_start - selection_offset
+            time_end = t_end - selection_offset
+            time_mask = (transform.times >= time_start) & (transform.times <= time_end)
+            frequency_mask = (transform.frequencies >= f_start) & (transform.frequencies <= f_end)
+            transform.spectrum[np.ix_(frequency_mask, time_mask)] = 0
+            changed = inverse_stft(transform)
+            result = audio.samples.copy()
+            result[start:end] = changed
+            return result
+
+        self.run_job("Applying spectral mask", worker, self._edited)
 
     def start_live(self):
         self.show_analysis("live")
