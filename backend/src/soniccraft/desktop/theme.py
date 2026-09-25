@@ -158,11 +158,15 @@ def icon(name, color="#c9d7d4"):
 
 
 def style_plot(plot):
-    plot.setBackground(BACKGROUND)
-    plot.showGrid(x=True, y=True, alpha=0.1)
+    plot_item = plot.getPlotItem() if hasattr(plot, "getPlotItem") else plot
+    if hasattr(plot, "setBackground"):
+        plot.setBackground(BACKGROUND)
+    else:
+        plot.getViewBox().setBackgroundColor(BACKGROUND)
+    plot_item.showGrid(x=True, y=True, alpha=0.1)
     for edge in ("left", "bottom"):
-        axis = plot.getAxis(edge)
+        axis = plot_item.getAxis(edge)
         axis.setPen("#34434a")
         axis.setTextPen("#899ba5")
         axis.setStyle(tickFont=QFont("Consolas", 9))
-    plot.getPlotItem().hideButtons()
+    plot_item.hideButtons()

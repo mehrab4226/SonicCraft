@@ -253,6 +253,13 @@ class MainWindow(QMainWindow):
         selection.addWidget(self.start_time)
         selection.addWidget(label("Out"))
         selection.addWidget(self.end_time)
+        self.target_channel_combo = QComboBox()
+        self.target_channel_combo.setAccessibleName("Target channel")
+        self.target_channel_combo.addItem("Both Channels", None)
+        self.target_channel_combo.addItem("Left Channel", 0)
+        self.target_channel_combo.addItem("Right Channel", 1)
+        selection.addWidget(label("Target"))
+        selection.addWidget(self.target_channel_combo)
         button(selection, "Set range", self.set_selection_from_inputs)
         button(selection, "Select all", self.actions_by_name["select_all"].trigger)
         selection.addStretch()
@@ -533,7 +540,11 @@ class MainWindow(QMainWindow):
         audio = self.document.audio
         if audio is None:
             return
-        parameters = {**parameters, "profile": self.noise_profile}
+        parameters = {
+            **parameters,
+            "profile": self.noise_profile,
+            "target_channel": self.target_channel_combo.currentData(),
+        }
         try:
             bounds = self.playback_range()
         except ValueError as error:
@@ -741,7 +752,8 @@ class MainWindow(QMainWindow):
         audio = self.document.audio
         if audio:
             position = self.player.position / audio.sample_rate
-            self.waveform.playhead.setValue(position)
+            for playhead in self.waveform.playhead_items:
+                playhead.setValue(position)
             self.timecode.setText(self.format_time(position))
         self.update_actions()
 

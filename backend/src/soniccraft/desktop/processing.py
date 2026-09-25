@@ -42,7 +42,13 @@ def process(audio, bounds, operation, parameters=None):
     if not 0 <= start < end <= len(audio.samples):
         raise ValueError("Select a non-empty sample range.")
     source = audio.samples
-    selected = source[start:end]
+    target_channel = parameters.get("target_channel")
+    if target_channel is not None and operation in ("trim", "delete"):
+        raise ValueError(
+            "Time-shifting operations (Trim, Delete) must apply to both channels to keep the stereo array synchronized."
+        )
+    targeted_stereo = source.ndim == 2 and target_channel in (0, 1)
+    selected = source[start:end, target_channel] if targeted_stereo else source[start:end]
     if operation == "trim":
         return trim_audio(source, start, end)
     if operation == "delete":
@@ -81,5 +87,8 @@ def process(audio, bounds, operation, parameters=None):
     else:
         raise ValueError(f"Unknown operation: {operation}")
     output = source.copy()
-    output[start:end] = changed
+    if targeted_stereo:
+        output[start:end, target_channel] = changed
+    else:
+        output[start:end] = changed
     return output
