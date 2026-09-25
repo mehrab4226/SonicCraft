@@ -1,6 +1,6 @@
 """A drill-down tool library: category -> feature -> controls, with Back."""
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QFrame, QWidget, QVBoxLayout, QStackedWidget, QScrollArea, QComboBox
+from PyQt6.QtWidgets import QCheckBox, QFrame, QWidget, QVBoxLayout, QStackedWidget, QScrollArea, QComboBox
 from .effects_panel import button, field
 from .theme import label
 
@@ -116,6 +116,10 @@ class FeatureSidebar(QFrame):
         self.input_device = QComboBox()
         self.input_device.addItem("System default", None)
         field(live, "Microphone input", self.input_device)
+        self.live_fft_size = QComboBox()
+        self.live_fft_size.addItems(["512", "1024", "2048", "4096"])
+        self.live_fft_size.setCurrentText("1024")
+        field(live, "Live FFT size · samples", self.live_fft_size)
         hint = label("Monitor the most recent 8 seconds. Your microphone opens only when you start monitoring. Audio is not saved to a file.")
         hint.setWordWrap(True)
         live.addWidget(hint)
@@ -125,6 +129,9 @@ class FeatureSidebar(QFrame):
         self.live_start = button(live, "Start monitoring", self.live_start_requested.emit)
         self.live_start.setProperty("primary", True)
         self.live_stop = button(live, "Stop monitoring", self.live_stop_requested.emit)
+        self.record_live = QCheckBox("Record to Document")
+        self.record_live.setAccessibleName("Record to Document")
+        live.addWidget(self.record_live)
         self.set_monitoring(False)
         live.addStretch()
         self.navigate("home")

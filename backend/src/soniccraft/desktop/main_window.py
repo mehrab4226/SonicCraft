@@ -449,6 +449,7 @@ class MainWindow(QMainWindow):
         self.run_job("Applying spectral mask", worker, self._edited)
 
     def start_live(self):
+        self.live_recording_buffer = np.empty(0)
         self.show_analysis("live")
         self.stop()
         self.stop_live()
@@ -478,6 +479,15 @@ class MainWindow(QMainWindow):
         self.live_spectrogram.stop_button.setEnabled(False)
         if was_monitoring and self.live_spectrogram.current_data is not None:
             self.live_spectrogram.info_label.setText("Monitoring stopped · last captured view retained.")
+        if getattr(self, "live_recording_buffer", np.empty(0)).size and self.sidebar.record_live.isChecked():
+            if QMessageBox.question(
+                self, "Load live recording?", "Load the recorded microphone audio into the editor?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            ) == QMessageBox.StandardButton.Yes:
+                self.document.load(AudioData(self.live_recording_buffer, self.microphone.sample_rate, "Live Recording"))
+                self.refresh()
+        self.live_recording_buffer = np.empty(0)
 
     def _live_tick(self):
         if self.microphone.stream is None:
@@ -491,6 +501,8 @@ class MainWindow(QMainWindow):
             incoming = np.concatenate(blocks)
             self.live_sample_count += len(incoming)
             self.live_samples = np.concatenate((self.live_samples, incoming))[-int(self.microphone.sample_rate * 8):]
+            if self.sidebar.record_live.isChecked():
+                self.live_recording_buffer = np.concatenate((self.live_recording_buffer, incoming))
         if self.microphone.dropped or self.microphone.warning:
             self.sidebar.live_status.setText(f"Monitoring · {self.microphone.dropped} dropped blocks. {self.microphone.warning}")
         if not blocks or self.live_job is not None:
@@ -499,7 +511,8 @@ class MainWindow(QMainWindow):
         rate = self.microphone.sample_rate
         offset = (self.live_sample_count - len(samples)) / rate
         generation = self.live_generation
-        self.live_job = Job(lambda: make_spectrogram(samples, rate, 1024, offset=offset, max_frames=320), self)
+        fft_size = int(self.sidebar.live_fft_size.currentText())
+        self.live_job = Job(lambda: make_spectrogram(samples, rate, fft_size, offset=offset, max_frames=320), self)
         def display(result):
             if generation == self.live_generation:
                 self.live_spectrogram.set_data(result)
