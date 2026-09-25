@@ -11,6 +11,9 @@ from PyQt6.QtWidgets import (
     QFrame, QSplitter, QStackedWidget, QToolButton, QSizePolicy, QProgressBar, QTabWidget
 )
 import sounddevice as sd
+import sys
+import os
+from PyQt6.QtGui import QAction, QKeySequence, QIcon
 
 from soniccraft import __version__
 from .document import AudioData, Document
@@ -35,6 +38,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setObjectName("soniccraftMainWindow")
         self.setWindowTitle("SonicCraft — Audio Editor")
+        # Safely locate the icon whether running via Python or PyInstaller .exe
+        bundle_dir = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(sys.argv[0])))
+        icon_path = os.path.join(bundle_dir, "SonicCraft_logo.ico")
+        self.setWindowIcon(QIcon(icon_path))
         self.resize(1380, 960)
         self.setMinimumSize(1000, 760)
         self.setAcceptDrops(True)
