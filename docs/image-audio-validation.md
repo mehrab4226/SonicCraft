@@ -31,3 +31,12 @@ The image chooser remains the only import step.
 
 These validate the documented conversion rules. They do not imply lossless
 waveform recovery or automatic understanding of arbitrary labelled screenshots.
+
+## PNG audio restoration
+
+Saved spectrogram PNGs now explicitly carry source audio. Tests verify exact
+sample equality through the desktop importer for a four-minute stereo signal,
+44.1 kHz mono, and 48 kHz stereo. The actual graph export also round-trips exactly.
+A damaged audio chunk is rejected. This restoration path is separate from the
+approximate pixel conversion measured above. Old graph-only PNGs cannot restore
+the song; they must be exported again from the source audio.

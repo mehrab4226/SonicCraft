@@ -22,6 +22,7 @@ from soniccraft.dsp.filters import frequency_response
 from soniccraft.dsp.noise_reduction import estimate_noise_profile
 from .spectrum_widget import SpectrumWidget
 from soniccraft.dsp.transforms import image_to_audio
+from soniccraft.dsp.spectrogram_archive import load_audio_png
 from .theme import label, icon, FileTitle
 from .sidebar import FeatureSidebar
 from .spectrogram_widget import SpectrogramWidget
@@ -924,6 +925,10 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _load_image_audio(path, **options):
+        embedded = load_audio_png(path)
+        if embedded is not None:
+            samples, sample_rate = embedded
+            return AudioData(samples, sample_rate, "Restored Spectrogram Audio")
         sample_rate = 44_100
         samples = image_to_audio(path, sample_rate, iterations=64, **options)
         return AudioData(samples, sample_rate, "Imported Spectrogram")

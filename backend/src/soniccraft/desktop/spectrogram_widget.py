@@ -2,7 +2,10 @@
 import pyqtgraph as pg
 from pyqtgraph.exporters import ImageExporter
 import numpy as np
-from PyQt6.QtCore import QRectF, pyqtSignal
+from io import BytesIO
+from PIL import Image
+from soniccraft.dsp.spectrogram_archive import save_audio_png
+from PyQt6.QtCore import QRectF, pyqtSignal, QBuffer, QIODevice
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QFileDialog, QMessageBox
 from .theme import label, style_plot
 from .effects_panel import button
@@ -28,6 +31,7 @@ class SpectrogramWidget(QWidget):
         self.scale_combo.currentIndexChanged.connect(self._replot)
         row.addWidget(self.scale_combo)
         self.save_button = button(row, "Save image", self._save_image_dialog)
+        self.save_button.setToolTip("Save a PNG graph with source audio included for exact restoration in SonicCraft.")
         self.save_button.setEnabled(False)
         self.mask_button = button(row, "Mute Region", self._request_mask)
         self.mask_button.setVisible(not live)
@@ -104,17 +108,17 @@ class SpectrogramWidget(QWidget):
             return
         dialog = QFileDialog(self, "Save spectrogram image")
         dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
-        dialog.setNameFilter("PNG image (*.png)")
+        dialog.setNameFilter("PNG image with source audio (*.png)")
         dialog.setDefaultSuffix("png")
         dialog.selectFile("spectrogram.png")
         if dialog.exec():
             try:
                 self.save_image(dialog.selectedFiles()[0])
-            except (OSError, RuntimeError) as error:
+            except (OSError, RuntimeError, ValueError) as error:
                 QMessageBox.warning(self, "Could not save image", str(error))
 
     def save_image(self, path):
-        """Export the displayed graph, axes and colour scale without edit handles."""
+        """Export the graph and its lossless source audio, without edit handles."""
         if self.current_data is None:
             raise ValueError("Generate a spectrogram before saving an image.")
         visible = self.mask_roi.isVisible()
@@ -123,8 +127,13 @@ class SpectrogramWidget(QWidget):
             exporter = ImageExporter(self.plot.getPlotItem())
             exporter.parameters()["width"] = 1600
             image = exporter.export(toBytes=True)
-            if not image.save(str(path), "PNG"):
-                raise OSError("The image could not be written. Choose a writable folder.")
+            buffer = QBuffer()
+            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+            if not image.save(buffer, "PNG"):
+                raise OSError("The graph could not be rendered.")
+            with Image.open(BytesIO(bytes(buffer.data()))) as preview:
+                save_audio_png(preview, path, self.current_data.source_samples,
+                               self.current_data.sample_rate)
         finally:
             self.mask_roi.setVisible(visible)
 

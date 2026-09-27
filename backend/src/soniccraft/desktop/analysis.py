@@ -35,6 +35,7 @@ class SpectrogramData:
     n_fft: int
     hop: float
     offset: float
+    source_samples: np.ndarray
 
 
 def make_spectrogram(samples, sample_rate, n_fft=2048, window="hann", *, offset=0, max_frames=1200):
@@ -73,4 +74,4 @@ def make_spectrogram(samples, sample_rate, n_fft=2048, window="hann", *, offset=
         indices = np.minimum(np.rint(starts / hop).astype(int), columns - 1)
         np.maximum.at(magnitude.T, indices, frame_magnitude.T)
     values = magnitude_to_db(magnitude).astype(np.float32)
-    return SpectrogramData(magnitude, values, duration, sample_rate, n_fft, hop, offset)
+    return SpectrogramData(magnitude, values, duration, sample_rate, n_fft, hop, offset, audio)

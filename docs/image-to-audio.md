@@ -29,7 +29,18 @@ or colour-bar selection screen is used.
 ## Save a generated spectrogram
 
 After generating a spectrogram from audio, click **Save image** above the graph.
-Choose a location to save a PNG containing the green graph, time/frequency axes
-and current colour scale. The selection rectangle is excluded. Export is 1,600
-pixels wide and preserves the graph proportions. This is a picture of the graph,
-not a lossless audio file or a calibrated format for importing audio again.
+The PNG includes the green graph, axes and colour scale, plus the source audio
+stored losslessly inside the file. Opening it in SonicCraft restores the stored
+samples, sample rate, channels, duration and volume exactly; it does not estimate
+this audio from the displayed pixels. A selected time interval or channel saves
+only that analyzed audio. Live spectrograms save the currently displayed buffer.
+
+The graph is 1,600 pixels wide and excludes selection handles. The embedded audio
+is independent of that display resolution. These PNGs can be much larger than
+ordinary screenshots; source samples are limited to 256 MiB before compression.
+
+Older exports contain only the graph and cannot restore the original song.
+Open the original audio and save a new PNG to include the audio. Image editors
+and messaging services may remove embedded data; keep the original exported file.
+Ordinary images without embedded audio still use the brightness conversion rules
+above and are not a way to recover an original recording from a screenshot.

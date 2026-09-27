@@ -325,6 +325,9 @@ def test_save_spectrogram_png_and_restore_selection_on_failure(tmp_path):
         assert np.count_nonzero((rgb[:,:,1] > rgb[:,:,0]+15) & (rgb[:,:,1] > rgb[:,:,2]+15)) > 100
         # Pink selection handles are excluded from the saved graph.
         assert not np.any(np.all(rgb == [255, 172, 166], axis=2))
+    restored = MainWindow._load_image_audio(path)
+    assert restored.sample_rate == rate
+    np.testing.assert_array_equal(restored.samples, widget.current_data.source_samples)
     assert widget.mask_roi.isVisible()
     with pytest.raises(OSError):
         widget.save_image(tmp_path / "missing" / "image.png")
@@ -332,3 +335,32 @@ def test_save_spectrogram_png_and_restore_selection_on_failure(tmp_path):
     widget.clear()
     assert not widget.save_button.isEnabled()
     widget.close()
+
+
+@pytest.mark.parametrize("rate,seconds,stereo", [(8000, 240, True), (48000, 1, True), (44100, 1, False)])
+def test_saved_png_restores_source_exactly(tmp_path, rate, seconds, stereo):
+    from soniccraft.dsp.spectrogram_archive import save_audio_png
+    t = np.arange(rate*seconds) / rate
+    left = .4*np.sin(2*np.pi*440*t) * (.6+.4*np.sin(2*np.pi*.7*t))
+    samples = np.column_stack([left, .2*np.sin(2*np.pi*997*t)]) if stereo else left
+    path = tmp_path / "song.png"
+    # Even a tiny display must not shorten or alter the stored song.
+    save_audio_png(Image.new("RGB", (80, 30), "green"), path, samples, rate)
+    actual = MainWindow._load_image_audio(path)
+    assert actual.sample_rate == rate
+    assert actual.duration == seconds
+    np.testing.assert_array_equal(actual.samples, samples)
+    with Image.open(path) as preview:
+        assert preview.size == (80, 30)
+
+
+def test_damaged_embedded_audio_does_not_fall_back_to_noise(tmp_path):
+    from soniccraft.dsp.spectrogram_archive import save_audio_png
+    path = tmp_path / "damaged.png"
+    save_audio_png(Image.new("RGB", (20, 20)), path, np.ones(100), 44100)
+    content = bytearray(path.read_bytes())
+    start = content.index(b"scAu")
+    content[start+25] ^= 1
+    path.write_bytes(content)
+    with pytest.raises(ValueError, match="damaged"):
+        MainWindow._load_image_audio(path)

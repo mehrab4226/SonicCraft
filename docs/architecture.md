@@ -95,3 +95,15 @@ noise-profile selection, resampling and transient visibility. Qt tests exercise
 navigation, live preview/reset behavior, stale jobs, document replacement, export
 and lifecycle. Audio stream tests inject simulated drivers. Actual device behavior
 must be checked on the evaluation laptop.
+
+## Spectrogram PNG export and restoration
+
+SpectrogramData retains the analyzed source samples independently of the bounded
+display grid. PNG exports include a private ancillary scAu chunk containing a
+versioned header and zlib-compressed little-endian float64 audio. Import checks
+for this data before pixel synthesis and restores it without normalization or
+resampling. CRC, dimensions, finite samples and decompression size are checked;
+damaged embedded audio fails instead of silently producing pixel-derived noise.
+Writes replace the destination atomically. This is an audio-carrying PNG archive,
+not an inverse transform of the graph screenshot. Source audio is capped at
+256 MiB. Selection/channel scope matches the generated spectrogram.
