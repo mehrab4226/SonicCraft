@@ -21,7 +21,7 @@ The icon ships as package data in `desktop/assets/`. There is no server process.
 | Spectral mute | `spectrogram_widget.py`, `processing.mask_spectrum` | STFT coefficient mask and inverse STFT |
 | Live input/recording | `audio_engine.Microphone`, `main_window.py` | Queued input blocks and display worker |
 | Mixer | `mixer_widget.py` | `dsp/effects.mix_audio`, `dsp/sampling.resample_audio` |
-| Image synthesis | `main_window._load_image_audio` | `dsp/transforms.image_to_audio`, Griffin-Lim |
+| Image synthesis | `main_window.import_image_dialog`, `main_window._load_image_audio` | `dsp/spectrogram_image.py`, `transforms.image_to_audio`, Griffin-Lim |
 | Reset/history | `document.py`, feature reset handlers | Snapshot replacement and parameter defaults |
 
 ## Document ownership
@@ -65,6 +65,17 @@ uses its own complete STFT, with a memory guard, and honors the displayed FFT si
 window and selected channel. Selection changes clear stale maps.
 
 ## Recording and mixing
+
+Image import sends the chosen file directly to a background worker without a
+settings dialog. Maximum RGB-channel brightness maps to magnitude, time runs
+left to right, and frequency runs bottom to top from zero to Nyquist. Image
+width determines duration at a 512-sample hop, capped at 2,048 time columns.
+The worker reconstructs phase with 64 Griffin-Lim iterations, peak-normalizes to
+0.95, and generates the display. Output is mono and unsaved. Both file and live
+spectrograms use green intensity scales with time on X and frequency on Y.
+The DSP helper retains optional calibration arguments for numerical tests;
+the desktop flow uses automatic defaults. Source phase and absolute loudness
+are unavailable in ordinary plot images.
 
 The microphone callback queues blocks with a bounded queue. A timer consumes them
 for an eight-second display history. Optional recording appends blocks without

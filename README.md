@@ -37,7 +37,7 @@ It does not download an older SonicCraft revision. You can also run the installe
 | Spectral editing | Mute a time-frequency rectangle using the displayed FFT/window and selected channel. |
 | Microphone | Live spectrogram with an eight-second history and optional recording into the document. |
 | Mixing | Add/remove tracks, offsets, volume, mute, sample-rate conversion and protected mixdown. |
-| Image synthesis | Import a spectrogram image and estimate phase with Griffin-Lim to synthesize audio. |
+| Image synthesis | Choose an image and convert its brightness directly into audio. |
 | Recovery | Undo/redo, per-tool parameter reset and a master reset to the original audio. |
 
 All graphs stay fitted to their workspace. Trackpad gestures do not zoom, pan or
@@ -104,14 +104,20 @@ application. Unconnected DSP exercises and superseded plans/slides have been rem
   buffers, not guarantees of total process memory use.
 - Noise profiles work best when they contain only the unwanted sound. Strong
   reduction and abrupt spectral masks can produce artifacts.
-- Image brightness contains no original phase. Image-to-audio synthesis is approximate.
+- Image-to-audio synthesis estimates missing phase and normalizes the output peak;
+  it cannot recover the exact original waveform or absolute loudness.
+  **File > Import Spectrogram Image** converts the selected image directly,
+  with no setup dialog. Brightness controls intensity, left-to-right position
+  controls time, and bottom-to-top position controls frequency.
+  See [image import instructions](docs/image-to-audio.md).
 - Playback and microphone availability depend on the local audio drivers and OS permissions.
 
 ## Presentation
 
-Present the first 13 slides. The remaining slides are Q&A references. The
-[rehearsal guide](Presentation/PRESENTER_GUIDE.md) includes the two-person timing
-and an 80-second demo. Authoring dependencies are separate from the app:
+Present the 12-slide PDF in the app's feature order. The
+[rehearsal guide](Presentation/PRESENTER_GUIDE.md) includes two-person timing
+and a live demo without a separate demonstration slide. Authoring dependencies
+are separate from the app:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r Presentation/requirements.txt

@@ -1,8 +1,9 @@
 """Time-frequency heatmap shared by file and live analysis."""
 import pyqtgraph as pg
+from pyqtgraph.exporters import ImageExporter
 import numpy as np
 from PyQt6.QtCore import QRectF, pyqtSignal
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QFileDialog, QMessageBox
 from .theme import label, style_plot
 from .effects_panel import button
 
@@ -26,6 +27,8 @@ class SpectrogramWidget(QWidget):
         self.scale_combo.addItems(["Decibels (dBFS)", "Linear normalized"])
         self.scale_combo.currentIndexChanged.connect(self._replot)
         row.addWidget(self.scale_combo)
+        self.save_button = button(row, "Save image", self._save_image_dialog)
+        self.save_button.setEnabled(False)
         self.mask_button = button(row, "Mute Region", self._request_mask)
         self.mask_button.setVisible(not live)
         self.mask_button.setEnabled(False)
@@ -46,7 +49,7 @@ class SpectrogramWidget(QWidget):
         self.mask_roi.setVisible(False)
         self.colormap = pg.ColorMap(
             [0, 0.25, 0.5, 0.75, 1],
-            ["#141416", "#49302f", "#96554b", "#d99270", "#f3d9a0"],
+            ["#101713", "#163e29", "#237a45", "#53b96d", "#c5f5bc"],
         )
         self.colorbar = pg.ColorBarItem(values=(-100, 0), colorMap=self.colormap, interactive=False, width=12)
         self.colorbar.setImageItem(self.image, insert_in=self.plot.getPlotItem())
@@ -78,6 +81,7 @@ class SpectrogramWidget(QWidget):
 
     def set_data(self, data):
         self.current_data = data
+        self.save_button.setEnabled(True)
         self.mask_button.setEnabled(not self.live)
         self.mask_roi.setVisible(not self.live)
         position, size = self.mask_roi.pos(), self.mask_roi.size()
@@ -94,6 +98,35 @@ class SpectrogramWidget(QWidget):
         self.plot.setXRange(data.offset, data.offset + max(data.duration, 1 / data.sample_rate), padding=0)
         self._apply_frequency_range(data.sample_rate / 2)
         self.info_label.setText(f"{'MICROPHONE' if self.live else 'SELECTION'}  ·  {data.n_fft} FFT  ·  {step * 1000:.1f} ms time step  ·  {data.duration:.2f} s")
+
+    def _save_image_dialog(self):
+        if self.current_data is None:
+            return
+        dialog = QFileDialog(self, "Save spectrogram image")
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dialog.setNameFilter("PNG image (*.png)")
+        dialog.setDefaultSuffix("png")
+        dialog.selectFile("spectrogram.png")
+        if dialog.exec():
+            try:
+                self.save_image(dialog.selectedFiles()[0])
+            except (OSError, RuntimeError) as error:
+                QMessageBox.warning(self, "Could not save image", str(error))
+
+    def save_image(self, path):
+        """Export the displayed graph, axes and colour scale without edit handles."""
+        if self.current_data is None:
+            raise ValueError("Generate a spectrogram before saving an image.")
+        visible = self.mask_roi.isVisible()
+        self.mask_roi.hide()
+        try:
+            exporter = ImageExporter(self.plot.getPlotItem())
+            exporter.parameters()["width"] = 1600
+            image = exporter.export(toBytes=True)
+            if not image.save(str(path), "PNG"):
+                raise OSError("The image could not be written. Choose a writable folder.")
+        finally:
+            self.mask_roi.setVisible(visible)
 
     def set_frequency_range(self, minimum=0.0, maximum=None):
         """Set optional frequency bounds in Hz for the spectrogram view."""
@@ -130,6 +163,7 @@ class SpectrogramWidget(QWidget):
 
     def clear(self, message=None):
         self.current_data = None
+        self.save_button.setEnabled(False)
         self.mask_button.setEnabled(False)
         self.mask_roi.setVisible(False)
         self.image.clear()

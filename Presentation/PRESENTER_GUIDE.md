@@ -1,60 +1,57 @@
-# SonicCraft: presentation guide
+# SonicCraft presentation guide
 
-The deck returns to the original structure: **13 main slides and 13 Q&A references**. Feature explanations are now shorter. Present slides 1-13 during the six-minute slot and use the appendix only for questions.
+The PDF has **12 slides** for a two-person team. The feature sequence follows the app: Edit & Dynamics, Frequency filter, 9-band equalizer, Noise reduction, Spectrum analyzer, Spectrogram, and Live spectrogram. Slide 11 explains preview, Apply and the two reset scopes. Slide 12 points to the repository. There is no scripted Q&A slide.
 
-## Timing for two presenters
+## Six-minute run of show
 
-| Slides | Presenter | Time |
-|---|---|---|
-| 1-3: introduction, motivation, architecture | Mehrab | 50 seconds |
-| 4-6: waveform, gain, filters | Mehrab | 65 seconds |
-| 7-10: EQ, FFT, spectrogram, noise reduction | Mahi | 95 seconds |
-| 11: preview, commit and results | Mahi | 25 seconds |
-| 12: live demonstration | Both | 80 seconds |
-| 13: closing | Mahi | 5 seconds |
+| Slides / action | Presenter | Target |
+|---|---|---:|
+| 1-3: purpose and design | Mehrab | 45 s |
+| 4: editing and dynamics | Mehrab | 30 s |
+| 5-6: filter and equalizer | Mehrab | 50 s |
+| 7-10: noise and analyzers | Mahi | 100 s |
+| 11: preview, Apply and reset | Mahi | 25 s |
+| Live demonstration, with no extra slide | Both | 75 s |
+| 12: source code | Mahi | 10 s |
 
-Total: **5:20**, leaving 40 seconds within the six-minute limit. The two-minute Q&A is separate.
+Total: **5:35**, leaving 25 seconds within the six-minute presentation and demo limit. The two-minute Q&A follows. Each person should be able to explain the whole application.
 
-## Short feature explanations
+## Say only the core idea on each feature slide
 
-- **Waveform:** Select the part of the audio to edit. Time maps to a sample position.
-- **Gain:** Make audio louder or quieter. This is amplitude scaling.
-- **Filters:** Keep some frequencies and reduce others. The frequency response shapes the sound.
-- **Equalizer:** Adjust bass, midrange and treble. Each filter band controls part of the spectrum.
-- **FFT:** See which frequencies are present. Fourier analysis breaks sound into frequency components.
-- **Spectrogram:** See how frequencies change over time. We analyze short sections of the sound.
-- **Noise reduction:** Estimate the background noise, then reduce it in the spectrum.
+- **Edit & Dynamics:** Select part of the waveform. Trim, change its level, or fade its edges.
+- **Frequency filter:** Keep one frequency range and reduce another. The graph compares low-pass and high-pass settings.
+- **9-band equalizer:** Change specific bands. The graph shows a bass boost and an upper-mid cut; the other bands remain flat.
+- **Noise reduction:** Capture a noise-only sample and use it to attenuate similar background noise elsewhere.
+- **Spectrum analyzer:** An FFT exposes the strongest frequencies in a selection.
+- **Spectrogram:** Bright horizontal bands show when each note occurs and at what frequency.
+- **Live spectrogram:** The same analysis refreshes as microphone blocks arrive; the lower graph shows the incoming waveform.
 
-The equations are visual theory anchors. Do not read or derive each equation during the timed presentation. Point to the graph and explain the effect in plain language.
+The figures are deterministic examples produced from the same processing code as the app. The noise example uses synthetic noise, and the live graph is an illustration of the rolling view rather than a microphone capture.
 
-## Other slides
+## Live demonstration
 
-**Architecture:** PyQt6 handles controls, NumPy and SciPy perform processing, and sounddevice plays audio. Effect previews run in a worker. Apply creates an undoable edit in the document. SoundFile handles import and export.
+Use `Presentation/demo/SonicCraft_demo_16k.wav`, a generated six-second stereo clip. Open the application before presenting and rehearse the full run on the evaluation laptop.
 
-**Preview and results:** Parameter changes preview during playback. A 10 ms crossfade reduces discontinuities when buffers switch. The tool reset clears its settings and current preview. The main reset restores the original audio and all tool defaults. The current test suite passes 77 tests.
+1. Open the demo and play it. Show the left and right waveform lanes.
+2. Move the 1000 Hz EQ slider during playback, then press **Apply EQ**. Mention that Apply saves this change inside the app.
+3. Change a band again, then use **Reset EQ** to clear only those uncommitted settings. Use **Reset audio** to restore the original clip.
+4. Select the 0-0.7 second noise-only section, capture a noise profile, select all, and show spectral subtraction preview. Apply it.
+5. Open the spectrogram and point out time on the horizontal axis and frequency on the vertical axis. Export WAV if time allows.
 
-## Eighty-second demonstration
+Pause playback before switching to a device that is unavailable in the room. The live microphone feature can be explained from slide 10 if the lab PC has no input device.
 
-Use `Presentation/demo/SonicCraft_demo_16k.wav`, a generated six-second stereo clip. Rehearse these steps before the session.
+## Useful Q&A facts
 
-1. **0-10 s, Mehrab:** Open and play the clip.
-2. **10-25 s, Mehrab:** Move the 1000 Hz EQ band to about +6 dB while playing, then Apply EQ. Restart playback if needed.
-3. **25-40 s, Mehrab:** Change a band, then Reset EQ. Explain that the applied edit remains. Use Reset audio to restore the source.
-4. **40-65 s, Mahi:** Select 0-0.7 seconds and capture a noise profile. Select all. Preview spectral subtraction at strength 1.5, then Apply.
-5. **65-80 s, Mahi:** Generate the spectrogram and export WAV. Return to the Questions slide.
-
-If time is short, explain export without opening the save dialog. Test speakers and projector beforehand. Both members should know the complete project.
-
-## Q&A references
-
-A1 Sample editing; A2 Fades; A3 Normalization; A4 Mixing; A5 Spectral editing; A6 Image-to-audio; A7 Noise methods; A8 Live spectrogram; A9 Preview internals; A10 Sampling; A11 Measurements; A12 Limitations; A13 Sources.
-
-Important distinctions: Apply commits audio in the app; Export writes a file. A local reset does not undo already-applied effects. Live preview includes background processing delay. Synthetic noise results do not establish general speech quality. Tests simulate audio streams and do not replace a physical hardware check.
-
-Long selections use averaged FFT windows at the original sample rate. Mixer inputs are resampled automatically. Practical limits include in-memory audio, processing delay and possible noise-reduction artifacts; details are in A12. The clean reference WAV in `Presentation/demo/` is available for comparison with the noisy demonstration clip.
+Apply commits an undoable change to the document; Export writes a file. A tool reset clears that tool's parameters and current preview, while Reset audio restores the original recording and all tool defaults. Live preview renders in a worker and playback crossfades between buffers for 10 ms. Long selections use overlapping FFT windows at the original sample rate. Mixdown resamples tracks with different rates. Image synthesis estimates missing phase. The clean reference WAV in `Presentation/demo/` can be used to compare the synthetic noise example.
 
 ## Submission and rebuilding
 
-Put the PDF on the teacher's PC before 2:30 PM. Submit the repository link and slides by Tuesday, 29 September 2026, following the instructor's Moodle link.
+Put the PDF on the teacher's PC before 2:30 PM. Submit the repository link and slides by Tuesday, 29 September 2026, through Moodle.
 
-Run `.\.venv\Scripts\python.exe Presentation/build_presentation.py` to rebuild the PDF. Slide content lives in `Presentation/presentation_slides.py`. Reproducible plots and demo audio come from `Presentation/prepare_presentation_assets.py`.
+From the repository root, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r Presentation/requirements.txt
+.\.venv\Scripts\python.exe Presentation/prepare_presentation_assets.py
+.\.venv\Scripts\python.exe Presentation/build_presentation.py
+```

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from PIL import Image
 from scipy.signal import get_window
 
 from ._validation import as_audio_array, validate_positive_int, validate_sample_rate
@@ -191,6 +190,8 @@ def griffin_lim(
         raise ValueError("n_fft must be at least 2")
     hop = size // 4 if hop_length is None else validate_positive_int(hop_length, name="hop_length")
     count = validate_positive_int(iterations, name="iterations")
+    if hop > size or (center and values.shape[1] < 2):
+        raise ValueError("Use a hop no larger than the FFT size and at least two centered frames.")
     if values.shape[0] != size // 2 + 1:
         raise ValueError("magnitude frequency bins do not match n_fft")
 
@@ -226,21 +227,16 @@ def image_to_audio(
     sample_rate: float,
     n_fft: int = 2048,
     iterations: int = 32,
+    **options,
 ) -> FloatArray:
-    """Reconstruct mono audio from a grayscale spectrogram image."""
+    """Synthesize audio using explicit image axes and intensity calibration.
 
-    size = validate_positive_int(n_fft, name="n_fft")
-    if size < 2:
-        raise ValueError("n_fft must be at least 2")
-    with Image.open(image_path) as image:
-        if image.width * size * 48 > 256 * 1024 * 1024:
-            raise ValueError("Image synthesis exceeds the 256 MiB transform budget. Use a narrower image.")
-        grayscale = image.convert("L")
-        resized = grayscale.resize((grayscale.width, size // 2 + 1), Image.Resampling.BILINEAR)
-        magnitude = np.asarray(resized, dtype=np.float64) / 255.0
-    return griffin_lim(
-        np.flipud(magnitude),
-        sample_rate,
-        n_fft=size,
-        iterations=iterations,
-    )
+    See spectrogram_image.image_magnitude for the image mapping options.
+    Absolute loudness and original phase are not encoded in ordinary images.
+    """
+    from .spectrogram_image import image_magnitude
+
+    magnitude, length = image_magnitude(image_path, sample_rate, n_fft=n_fft, **options)
+    samples = griffin_lim(magnitude, sample_rate, n_fft=n_fft, iterations=iterations)[:length]
+    peak = float(np.max(np.abs(samples)))
+    return samples * (.95 / peak) if peak > np.finfo(float).eps else np.zeros_like(samples)

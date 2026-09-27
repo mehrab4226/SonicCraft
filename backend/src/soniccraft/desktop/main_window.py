@@ -904,16 +904,28 @@ class MainWindow(QMainWindow):
         if not self.confirm_discard():
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import spectrogram image", "", "Images (*.png *.jpg *.bmp)"
+            self, "Import spectrogram image", "", "Images (*.png *.jpg *.jpeg *.bmp)"
         )
         if path:
-            self.run_job("Importing spectrogram image", lambda: self._load_image_audio(path),
-                         lambda audio: self._loaded(audio, saved=False))
+            def reconstruct():
+                audio = self._load_image_audio(path)
+                return audio, make_spectrogram(audio.samples, audio.sample_rate)
+            self.run_job("Importing spectrogram image", reconstruct,
+                         self._image_loaded)
+
+    def _image_loaded(self, result):
+        audio, data = result
+        self._loaded(audio, saved=False)
+        self.sidebar.fft_size.setCurrentText("2048")
+        self.sidebar.window_function.setCurrentText("hann")
+        self.spectrogram_widget.set_frequency_range()
+        self.sidebar.navigate("spectrogram")
+        self.spectrogram_widget.set_data(data)
 
     @staticmethod
-    def _load_image_audio(path):
+    def _load_image_audio(path, **options):
         sample_rate = 44_100
-        samples = image_to_audio(path, sample_rate)
+        samples = image_to_audio(path, sample_rate, iterations=64, **options)
         return AudioData(samples, sample_rate, "Imported Spectrogram")
 
     def open_path(self, path):

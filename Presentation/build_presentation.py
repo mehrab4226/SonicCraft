@@ -1,19 +1,11 @@
-"""Build the CSE 220 evaluation PDF and inspectable page renders.
-
-Run prepare_presentation_assets.py first. PDF-only delivery uses ReportLab,
-Matplotlib's equation typesetting, vector plot assets, and PyMuPDF rendering.
-"""
+"""Build the CSE 220 presentation PDF and inspectable page renders."""
 from pathlib import Path
-from io import BytesIO
 import sys
 import json
 import math
-import os
-import re
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT / '.cache/presentation-deps'))
-os.environ.setdefault('MPLCONFIGDIR', str(ROOT / '.cache/matplotlib'))
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -21,8 +13,6 @@ from reportlab.lib.colors import HexColor
 from reportlab.graphics import renderPDF
 from reportlab.lib.utils import ImageReader
 from svglib.svglib import svg2rlg
-from matplotlib.mathtext import math_to_image
-from matplotlib.font_manager import FontProperties
 import pymupdf as fitz
 from PIL import Image, ImageDraw
 
@@ -31,7 +21,6 @@ OUT = ROOT / 'output/pdf'
 BUILD = ROOT / '.cache/presentation-revised'
 OUT.mkdir(parents=True, exist_ok=True)
 BUILD.mkdir(parents=True, exist_ok=True)
-RESULTS=json.loads((ASSETS/'measurements.json').read_text())
 PDF=OUT/'SonicCraft_CSE220_Final_Presentation.pdf'
 W,H=960,540
 BG='#141416'; FG='#f4eee4'; AMBER='#e6bd78'; CORAL='#e5a093'
@@ -40,11 +29,11 @@ for name,file in [('Segoe','segoeui.ttf'),('SegoeBold','segoeuib.ttf'),('SegoeLi
     pdfmetrics.registerFont(TTFont(name,'C:/Windows/Fonts/'+file))
 c=canvas.Canvas(str(PDF),pagesize=(W,H),pageCompression=1)
 c.setTitle('SonicCraft | CSE 220 Final Project Evaluation')
-c.setAuthor('Md Mehrab Hossain (2305108); Mahbubul Islam Mahi (2305115)')
-c.setSubject('A short overview of SonicCraft features and their Signals and Systems connections')
+c.setAuthor('Md Mehrab Hossain (2305108); Mahbubul Islam Mahi (2305116)')
+c.setSubject('SonicCraft audio editor: features, design and live workflow')
 c.setCreator('SonicCraft presentation builder')
 c.showOutline()
-PAGE=0; A_INDEX=0; DARK=True; QA=[]; TITLES=[]
+PAGE=0; DARK=True; QA=[]; TITLES=[]
 
 def color(hexcode): return HexColor(hexcode)
 
@@ -86,17 +75,6 @@ def text(s,x,y,size=22,font='Segoe',col=None,w=None,leading=None,max_lines=None)
 def label(s,x,y,col=None,size=12):
     return text(s.upper(),x,y,size,'SegoeBold',col or (AMBER if DARK else '#88612b'))
 
-def equation(expr,x,y,w=300,h=65,col=None):
-    data=BytesIO()
-    math_to_image('$'+expr+'$',data,prop=FontProperties(size=28),format='svg',color=col or (FG if DARK else INK))
-    # MathText's SVG includes an opaque white figure patch. Remove that patch
-    # so the equation remains a clean vector layer over the slide background.
-    svg_data=re.sub(rb'<g id="patch_1">.*?</g>',b'',data.getvalue(),flags=re.S)
-    drawing=svg2rlg(BytesIO(svg_data))
-    scale=min(w/drawing.width,h/drawing.height)
-    c.saveState();c.translate(x,H-y-drawing.height*scale);c.scale(scale,scale)
-    renderPDF.draw(drawing,c,0,0);c.restoreState()
-
 def svg(name,x,y,w,h):
     drawing=svg2rlg(str(ASSETS/(name+'.svg')))
     scale=min(w/drawing.width,h/drawing.height)
@@ -116,32 +94,31 @@ def arrow(x1,y1,x2,y2,col=AMBER):
     for angle in (a+2.65,a-2.65):
         line(x2,y2,x2+8*math.cos(angle),y2+8*math.sin(angle),col,1.5)
 
-def page(title,subtitle='',dark=True,source='',appendix=None,show_title=True):
-    global PAGE,A_INDEX,DARK
+def page(title,subtitle='',dark=True,source='',show_title=True,footer=True):
+    global PAGE,DARK
     if PAGE:c.showPage()
     PAGE+=1;DARK=dark;TITLES.append(title)
-    if appendix:
-        A_INDEX+=1
-        appendix=A_INDEX
     rect(0,0,W,H,BG if dark else LIGHT)
     c.bookmarkPage('page'+str(PAGE))
-    c.addOutlineEntry(('A'+str(appendix)+'. ' if appendix else '')+title,'page'+str(PAGE),0,False)
-    if appendix:
-        label('Q&A reference',54,24,col=MUTED if dark else GREY,size=10)
-    if show_title:text(title,54,50 if appendix else 43,38,'SegoeBold',w=852,max_lines=1)
-    if subtitle:text(subtitle,54,104 if not appendix else 108,20,col=MUTED if dark else GREY,w=852,max_lines=2)
-    line(54,498,906,498,LINE if dark else '#d3ccc1',.6)
-    if source:text(source,54,511,9.5,col=MUTED if dark else GREY,w=785,max_lines=1)
-    text(('A'+str(appendix)) if appendix else f'{PAGE:02d}',878,510,12,'Mono',AMBER if dark else GREY)
+    c.addOutlineEntry(title,'page'+str(PAGE),0,False)
+    if show_title:text(title,54,43,38,'SegoeBold',w=852,max_lines=1)
+    if subtitle:text(subtitle,54,104,20,col=MUTED if dark else GREY,w=852,max_lines=2)
+    if footer:
+        line(54,498,906,498,LINE if dark else '#d3ccc1',.6)
+        if source:text(source,54,511,9.5,col=MUTED if dark else GREY,w=785,max_lines=1)
+        text(f'{PAGE:02d}',878,510,12,'Mono',AMBER if dark else GREY)
 
-def feature(title,summary,theory,description,expr,plot,source,detail=None):
+def bullet(body,x,y,width=255,size=20):
+    c.setFillColor(color(AMBER))
+    c.circle(x+5,H-y-12,5,stroke=0,fill=1)
+    text(body,x+22,y,size,col=FG,w=width,max_lines=2,leading=size*1.32)
+
+def feature(title,summary,category,points,plot,source,detail=''):
     page(title,summary,source=source)
-    label('Theory connection',54,172)
-    text(theory,54,199,27,'SegoeBold',w=286,max_lines=2)
-    text(description,54,285,22,col=MUTED,w=276,max_lines=3)
-    if expr:equation(expr,54,385,284,59)
-    svg(plot,350,170,565,284)
-    if detail:text(detail,369,459,13,col=MUTED,w=532,max_lines=2)
+    label(category,54,157,size=12)
+    for i,point in enumerate(points):bullet(point,54,203+i*77)
+    svg(plot,350,161,565,289)
+    if detail:text(detail,369,456,13,col=MUTED,w=529,max_lines=2)
 
 
 exec((ROOT / 'Presentation/presentation_slides.py').read_text(encoding='utf-8'))
@@ -164,5 +141,5 @@ for start in range(0,len(thumbnails),8):
     sheet=Image.new('RGB',(1000,304*math.ceil(len(batch)/2)),'#29292d')
     for i,thumb in enumerate(batch):sheet.paste(thumb,((i%2)*500,(i//2)*304))
     sheet.save(BUILD/f'contact-{start//8+1}.png')
-print(f'Created {PDF} with 13 main slides and {len(doc)-13} Q&A references.')
+print(f'Created {PDF} with {len(doc)} presentation slides.')
 print(f'Rendered every page in {BUILD}')
