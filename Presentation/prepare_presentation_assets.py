@@ -36,14 +36,14 @@ plt.rcParams.update({
     'xtick.labelsize': 12, 'ytick.labelsize': 12, 'svg.fonttype': 'path',
     'axes.spines.top': False, 'axes.spines.right': False,
 })
-BG = '#141416'
-FG = '#f4eee4'
-MUTED = '#bcb7af'
-AMBER = '#e6bd78'
-CORAL = '#e5a093'
-GRID = '#3b3b40'
+BG = '#faf8f3'
+FG = '#202c35'
+MUTED = '#52616b'
+AMBER = '#966016'
+CORAL = '#b04b3c'
+GRID = '#c9d0cf'
 CMAP = LinearSegmentedColormap.from_list(
-    'soniccraft', ['#141416', '#49302f', '#96554b', '#d99270', '#f3d9a0']
+    'soniccraft', ['#faf8f3', '#dcebdc', '#9bc59d', '#4e8d65', '#18533c']
 )
 
 

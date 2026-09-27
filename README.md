@@ -114,7 +114,7 @@ application. Unconnected DSP exercises and superseded plans/slides have been rem
 
 ## Presentation
 
-Present the 12-slide PDF in the app's feature order. The
+Present the 14-slide PDF in the app's feature order. The
 [rehearsal guide](Presentation/PRESENTER_GUIDE.md) includes two-person timing
 and a live demo without a separate demonstration slide. Authoring dependencies
 are separate from the app:

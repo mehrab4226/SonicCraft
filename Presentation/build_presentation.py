@@ -23,8 +23,8 @@ OUT.mkdir(parents=True, exist_ok=True)
 BUILD.mkdir(parents=True, exist_ok=True)
 PDF=OUT/'SonicCraft_CSE220_Final_Presentation.pdf'
 W,H=960,540
-BG='#141416'; FG='#f4eee4'; AMBER='#e6bd78'; CORAL='#e5a093'
-MUTED='#bcb7af'; LINE='#3d3b3a'; LIGHT='#f2eee6'; INK='#222328'; GREY='#68645f'
+BG='#faf8f3'; FG='#202c35'; AMBER='#966016'; CORAL='#b04b3c'
+MUTED='#52616b'; LINE='#d8dedc'; LIGHT='#faf8f3'; INK='#202c35'; GREY='#52616b'
 for name,file in [('Segoe','segoeui.ttf'),('SegoeBold','segoeuib.ttf'),('SegoeLight','segoeuil.ttf'),('Mono','consola.ttf')]:
     pdfmetrics.registerFont(TTFont(name,'C:/Windows/Fonts/'+file))
 c=canvas.Canvas(str(PDF),pagesize=(W,H),pageCompression=1)
