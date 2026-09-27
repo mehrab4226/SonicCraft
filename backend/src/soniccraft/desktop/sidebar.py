@@ -117,17 +117,14 @@ class FeatureSidebar(QFrame):
         spectrogram.addStretch()
 
         live = self._page("live", "Live Spectrogram", "home")
-        self.input_device = QComboBox()
-        self.input_device.addItem("System default", None)
-        field(live, "Microphone input", self.input_device)
         self.live_fft_size = QComboBox()
         self.live_fft_size.addItems(["512", "1024", "2048", "4096"])
         self.live_fft_size.setCurrentText("1024")
         field(live, "Live FFT size · samples", self.live_fft_size)
-        hint = label("Monitor the most recent 8 seconds. Your microphone opens only when you start monitoring. Audio is not saved to a file.")
+        hint = label("Generate the spectrogram from the audio playing in the app. Pause playback to pause graph generation.")
         hint.setWordWrap(True)
         live.addWidget(hint)
-        self.live_status = label("Microphone is off.")
+        self.live_status = label("Audio playback is stopped.")
         self.live_status.setWordWrap(True)
         live.addWidget(self.live_status)
         self.live_start = button(live, "Start monitoring", self.live_start_requested.emit)
@@ -140,7 +137,7 @@ class FeatureSidebar(QFrame):
         self._feature_defaults = {
             "spectrum": (),
             "spectrogram": ((self.fft_size, 2), (self.window_function, 0)),
-            "live": ((self.input_device, 0), (self.live_fft_size, 1), (self.record_live, False)),
+            "live": ((self.live_fft_size, 1), (self.record_live, False)),
         }
         self.set_monitoring(False)
         live.addStretch()
@@ -210,6 +207,5 @@ class FeatureSidebar(QFrame):
     def set_monitoring(self, active):
         self.live_start.setEnabled(not active)
         self.live_stop.setEnabled(active)
-        self.input_device.setEnabled(not active)
         self.record_live.setEnabled(not active)
-        self.live_status.setText("● Monitoring microphone" if active else "Microphone is off.")
+        self.live_status.setText("● Analyzing audio playback" if active else "Audio playback is stopped.")

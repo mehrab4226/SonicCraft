@@ -9,7 +9,7 @@ from PyQt6.QtCore import QCoreApplication, QEvent
 from PyQt6.QtWidgets import QDockWidget
 from soniccraft.desktop.main import create_application
 from soniccraft.desktop.main_window import MainWindow
-from soniccraft.desktop.audio_engine import Microphone
+from soniccraft.desktop.audio_engine import Microphone, Player
 from soniccraft.desktop.document import AudioData
 from soniccraft.desktop.analysis import make_spectrogram
 
@@ -113,38 +113,47 @@ class AnalysisWorkspaceTests(unittest.TestCase):
         self.assertIsNone(self.window.spectrogram_widget.current_data)
         self.assertEqual(self.errors, [])
 
-    def test_live_start_worker_stop_and_navigation_without_audio_document(self):
+    def test_live_spectrogram_follows_playback_and_pauses(self):
         driver = MagicMock()
-        driver.query_devices.return_value = {"default_samplerate": 8000}
-        driver.InputStream.return_value.active = True
-        self.window.microphone = Microphone(driver)
+        driver.OutputStream.return_value.active = True
+        self.window.player = Player(driver)
+        self.load()
         self.window.sidebar.navigate("live")
-        driver.InputStream.assert_not_called()
         self.window.sidebar.live_start.click()
         self.window.live_timer.stop()
-        driver.InputStream.assert_called_once()
-        self.assertIsNone(self.window.document.audio)
+        driver.OutputStream.assert_called_once()
         self.assertTrue(self.window.sidebar.live_stop.isEnabled())
-        block = .4 * np.sin(2 * np.pi * 500 * np.arange(80000) / 8000)
-        self.window.microphone._callback(block[:, None], len(block), None, None)
+        self.window.player.position = 4000
         self.window._live_tick()
         self.wait_jobs()
         self.assertIsNotNone(self.window.live_spectrogram.current_data)
-        self.assertEqual(len(self.window.live_samples), 64000)
-        self.assertEqual(self.window.live_spectrogram.current_data.duration, 8)
-        self.assertEqual(self.window.live_spectrogram.current_data.offset, 2)
+        self.assertEqual(len(self.window.live_samples), 4000)
+        self.assertEqual(self.window.live_spectrogram.current_data.duration, .5)
+        self.assertEqual(self.window.live_spectrogram.current_data.offset, 0)
+        self.assertEqual(self.window.live_spectrogram.live_playhead.value(), .5)
+        self.assertEqual(self.window.live_spectrogram.plot.viewRange()[0], [0, 2])
+        self.window.sidebar.live_stop.click()
+        self.assertFalse(self.window.live_timer.isActive())
+        self.assertEqual(self.window.player.position, 4000)
+        self.window.player.position = 6000
+        self.window._live_tick()
+        self.assertEqual(len(self.window.live_samples), 4000)
+        self.window.sidebar.live_start.click()
+        self.window.live_timer.stop()
+        self.assertEqual(driver.OutputStream.call_count, 2)
+        self.window.player.position = 5000
+        self.window._live_tick()
+        self.wait_jobs()
+        self.assertEqual(len(self.window.live_samples), 5000)
         self.window.sidebar.navigate("spectrum")
         self.assertIsNone(self.window.microphone.stream)
         self.assertFalse(self.window.live_timer.isActive())
-        driver.InputStream.return_value.close.assert_called()
+        driver.OutputStream.return_value.close.assert_called()
 
-    def test_failed_microphone_start_keeps_controls_recoverable(self):
-        driver = MagicMock()
-        driver.query_devices.side_effect = RuntimeError("No input device")
-        self.window.microphone = Microphone(driver)
+    def test_live_start_without_audio_keeps_controls_recoverable(self):
         self.window.sidebar.navigate("live")
         self.window.sidebar.live_start.click()
         self.assertTrue(self.window.sidebar.live_start.isEnabled())
         self.assertFalse(self.window.sidebar.live_stop.isEnabled())
-        self.assertIn("No input device", self.window.sidebar.live_status.text())
+        self.assertIn("Load audio", self.window.sidebar.live_status.text())
         self.assertIsNone(self.window.microphone.stream)

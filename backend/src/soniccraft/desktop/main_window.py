@@ -47,6 +47,9 @@ class MainWindow(QMainWindow):
         self.live_job = None
         self.live_samples = np.empty(0)
         self.live_sample_count = 0
+        self.live_start_sample = 0
+        self.live_end_sample = 0
+        self.live_audio = None
         self.live_generation = 0
         self.live_recording_blocks = []
         self.live_recording_frames = 0
@@ -531,45 +534,44 @@ class MainWindow(QMainWindow):
 
     def start_live(self):
         self.show_analysis("live")
-        self.stop()
+        audio = self.preview_audio or self.document.audio
+        if audio is None:
+            self.sidebar.live_status.setText("Load audio before starting the live spectrogram.")
+            return
+        if self.live_audio is audio and self.live_end_sample > self.live_start_sample:
+            self.sidebar.set_monitoring(True)
+            self.live_spectrogram.stop_button.setEnabled(True)
+            self.play()
+            self.live_timer.start()
+            return
         self.stop_live()
-        self.live_recording_blocks = []
-        self.live_recording_frames = 0
         try:
-            self.microphone.start(self.sidebar.input_device.currentData())
-        except Exception as error:
-            self.sidebar.live_status.setText(f"Microphone unavailable: {error}")
+            start, end = self.playback_range()
+        except ValueError as error:
+            self.sidebar.live_status.setText(str(error))
             return
         self.live_generation += 1
+        self.live_audio = audio
+        self.live_start_sample = start
+        self.live_end_sample = end
         self.live_samples = np.empty(0)
         self.live_sample_count = 0
-        self.live_spectrogram.clear("Listening for microphone audio…")
+        self.live_spectrogram.set_live_duration((end - start) / audio.sample_rate)
+        self.live_spectrogram.clear("Waiting for audio playback…")
         self.sidebar.set_monitoring(True)
         self.live_spectrogram.stop_button.setEnabled(True)
+        self.player.stop()
+        self.play()
         self.live_timer.start()
 
     def stop_live(self):
-        was_monitoring = self.microphone.stream is not None
-        self.live_generation += 1
         if hasattr(self, "live_timer"):
             self.live_timer.stop()
-        try:
-            self._capture_recording(self.microphone.stop())
-        except Exception as error:
-            self.statusBar().showMessage(f"Microphone stop failed: {error}")
+        if self.live_audio is not None and self.player.stream is not None:
+            self.player.pause()
+        self.microphone.stop()
         self.sidebar.set_monitoring(False)
         self.live_spectrogram.stop_button.setEnabled(False)
-        if was_monitoring and self.live_spectrogram.current_data is not None:
-            self.live_spectrogram.info_label.setText("Monitoring stopped · last captured view retained.")
-        recording, self.live_recording_blocks = self.live_recording_blocks, []
-        self.live_recording_frames = 0
-        if recording and self.sidebar.record_live.isChecked():
-            if QMessageBox.question(
-                self, "Load live recording?", "Load the recorded microphone audio into the editor?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            ) == QMessageBox.StandardButton.Yes and self.confirm_discard():
-                self._loaded(AudioData(np.concatenate(recording), self.microphone.sample_rate, "Live Recording"), saved=False)
 
     def _capture_recording(self, blocks):
         if not self.sidebar.record_live.isChecked():
@@ -586,33 +588,25 @@ class MainWindow(QMainWindow):
         return False
 
     def _live_tick(self):
-        if self.microphone.stream is None:
+        audio = self.preview_audio or self.document.audio
+        if audio is None or self.player.stream is None:
             return
-        if not self.microphone.stream.active:
-            self.stop_live()
-            self.sidebar.live_status.setText("Microphone stopped. Check the input device and restart.")
+        if self.live_job is not None:
             return
-        blocks = self.microphone.drain()
-        if blocks:
-            incoming = np.concatenate(blocks)
-            self.live_sample_count += len(incoming)
-            self.live_samples = np.concatenate((self.live_samples, incoming))[-int(self.microphone.sample_rate * 8):]
-            if self.sidebar.record_live.isChecked():
-                # Append blocks once instead of copying the complete recording each tick.
-                if self._capture_recording([incoming]):
-                    self.stop_live()
-                    self.sidebar.live_status.setText("Recording reached the 64 MiB limit. Monitoring stopped.")
-                    return
-        if self.microphone.dropped or self.microphone.warning:
-            self.sidebar.live_status.setText(f"Monitoring · {self.microphone.dropped} dropped blocks. {self.microphone.warning}")
-        if not blocks or self.live_job is not None:
+        current = min(self.player.position, self.live_end_sample)
+        if current <= self.live_start_sample:
             return
-        samples = self.live_samples.copy()
-        rate = self.microphone.sample_rate
-        offset = (self.live_sample_count - len(samples)) / rate
+        self.live_samples = audio.samples[self.live_start_sample:current].copy()
+        self.live_sample_count = len(self.live_samples)
+        rate = audio.sample_rate
         generation = self.live_generation
         fft_size = int(self.sidebar.live_fft_size.currentText())
-        self.live_job = Job(lambda: make_spectrogram(samples, rate, fft_size, offset=offset, max_frames=320), self)
+        samples = self.live_samples.copy()
+        # Keep the live time step fixed so existing columns stay in place as the graph grows rightward.
+        live_frames = len(samples) // (fft_size // 4) + 1
+        self.live_job = Job(lambda: make_spectrogram(
+            samples, rate, fft_size, offset=0, max_frames=live_frames
+        ), self)
         def display(result):
             if generation == self.live_generation:
                 self.live_spectrogram.set_data(result)
@@ -624,6 +618,7 @@ class MainWindow(QMainWindow):
         self.live_job.failed.connect(failed)
         self.live_job.finished.connect(self._live_job_finished)
         self.live_job.start()
+        self.sidebar.live_status.setText(f"Playing audio · {self.live_sample_count / rate:.2f} s analyzed")
 
     def _live_job_finished(self):
         self.live_job.deleteLater()
@@ -751,8 +746,11 @@ class MainWindow(QMainWindow):
             self.stop_live()
             self.live_samples = np.empty(0)
             self.live_sample_count = 0
+            self.live_start_sample = 0
+            self.live_end_sample = 0
+            self.live_audio = None
             self.live_spectrogram.reset_parameters()
-            self.live_spectrogram.clear("Live spectrogram settings reset. Start monitoring to listen.")
+            self.live_spectrogram.clear("Live spectrogram settings reset. Start playback analysis again.")
         if affected:
             self.discard_preview(reset_eq=False)
             self.spectrogram_widget.clear("Preview reset. Generate a new spectrogram.")
@@ -832,20 +830,14 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "output_device"):
             return
         selected = self.output_device.currentData()
-        input_selected = self.sidebar.input_device.currentData()
         self.output_device.clear()
         self.output_device.addItem("System default", None)
-        self.sidebar.input_device.clear()
-        self.sidebar.input_device.addItem("System default", None)
         try:
             for index, device in enumerate(sd.query_devices()):
                 if device["max_output_channels"] > 0:
                     self.output_device.addItem(device["name"], index)
-                if device["max_input_channels"] > 0:
-                    self.sidebar.input_device.addItem(device["name"], index)
             match = self.output_device.findData(selected)
             self.output_device.setCurrentIndex(max(0, match))
-            self.sidebar.input_device.setCurrentIndex(max(0, self.sidebar.input_device.findData(input_selected)))
         except Exception as error:
             self.statusBar().showMessage(f"Audio device discovery failed: {error}")
 
@@ -992,7 +984,6 @@ class MainWindow(QMainWindow):
         audio = self.preview_audio or self.document.audio
         if audio is None:
             return
-        self.stop_live()
         try:
             start, end = self.playback_range()
             if self.player.samples is audio.samples and start <= self.player.position < end:
@@ -1080,9 +1071,12 @@ class MainWindow(QMainWindow):
         self.spectrum_widget.scale_combo.setCurrentIndex(0)
         self.spectrogram_widget.reset_parameters()
         self.live_spectrogram.reset_parameters()
-        self.live_spectrogram.clear("Start monitoring to see microphone audio.")
+        self.live_spectrogram.clear("Start playback analysis to see the live spectrogram.")
         self.live_samples = np.empty(0)
         self.live_sample_count = 0
+        self.live_start_sample = 0
+        self.live_end_sample = 0
+        self.live_audio = None
         self.mixer.reset_parameters()
         self.target_channel_combo.setCurrentIndex(0)
         self.noise_profile = None
@@ -1151,7 +1145,7 @@ class MainWindow(QMainWindow):
             self.sidebar.set_audio_available(ready and loaded)
             self.selection_panel.setEnabled(ready and loaded)
             self.busy_indicator.setVisible(not ready)
-            self.transport_status.setText("●  PROCESSING" if not ready else "●  MONITORING" if self.microphone.stream is not None else "●  PLAYING" if self.player.active else "●  READY" if loaded else "●  IDLE")
+            self.transport_status.setText("●  PROCESSING" if not ready else "●  ANALYZING" if self.live_timer.isActive() else "●  PLAYING" if self.player.active else "●  READY" if loaded else "●  IDLE")
 
     def closeEvent(self, event):
         if self.job is not None:

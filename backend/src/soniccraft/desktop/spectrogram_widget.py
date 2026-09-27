@@ -22,7 +22,7 @@ class SpectrogramWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
         row = QHBoxLayout()
-        self.info_label = label("Start monitoring to see microphone audio." if live else "Select audio, then generate a spectrogram from the sidebar.")
+        self.info_label = label("Start playback analysis to see the live spectrogram." if live else "Select audio, then generate a spectrogram from the sidebar.")
         self.info_label.setWordWrap(True)
         row.addWidget(self.info_label, 1)
         row.addWidget(label("LEVEL", "eyebrow"))
@@ -48,6 +48,10 @@ class SpectrogramWidget(QWidget):
         self.plot.setMinimumHeight(100)
         self.image = pg.ImageItem(axisOrder="row-major")
         self.plot.addItem(self.image)
+        self.live_playhead = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen("#f3ddd2", width=1.5))
+        self.live_playhead.setZValue(10)
+        self.live_playhead.setVisible(False)
+        self.plot.addItem(self.live_playhead)
         self.mask_roi = pg.RectROI([0, 0], [0.5, 1000], pen=pg.mkPen("#ffaca6", width=2))
         self.plot.addItem(self.mask_roi)
         self.mask_roi.setVisible(False)
@@ -60,6 +64,7 @@ class SpectrogramWidget(QWidget):
         layout.addWidget(self.plot, 1)
         self._frequency_min = 0.0
         self._frequency_max = None
+        self._live_duration = None
 
     @property
     def has_parameter_changes(self):
@@ -83,6 +88,11 @@ class SpectrogramWidget(QWidget):
         f_end = f_start + float(size.y())
         self.mask_requested.emit(t_start, t_end, f_start, f_end)
 
+    def set_live_duration(self, duration):
+        self._live_duration = max(0.0, float(duration))
+        if self.live and self.current_data is not None:
+            self.plot.setXRange(0, max(self._live_duration, self.current_data.duration), padding=0)
+
     def set_data(self, data):
         self.current_data = data
         self.save_button.setEnabled(True)
@@ -99,9 +109,15 @@ class SpectrogramWidget(QWidget):
         bin_width = data.sample_rate / data.n_fft
         self.image.setRect(QRectF(data.offset - step / 2, -bin_width / 2,
                                  max(step, data.values.shape[1] * step), data.values.shape[0] * bin_width))
-        self.plot.setXRange(data.offset, data.offset + max(data.duration, 1 / data.sample_rate), padding=0)
+        if self.live:
+            x_end = max(self._live_duration or 0, data.duration, 1 / data.sample_rate)
+            self.plot.setXRange(0, x_end, padding=0)
+        else:
+            self.plot.setXRange(data.offset, data.offset + max(data.duration, 1 / data.sample_rate), padding=0)
         self._apply_frequency_range(data.sample_rate / 2)
-        self.info_label.setText(f"{'MICROPHONE' if self.live else 'SELECTION'}  ·  {data.n_fft} FFT  ·  {step * 1000:.1f} ms time step  ·  {data.duration:.2f} s")
+        self.live_playhead.setVisible(self.live)
+        self.live_playhead.setValue(data.offset + data.duration)
+        self.info_label.setText(f"{'PLAYBACK' if self.live else 'SELECTION'}  ·  {data.n_fft} FFT  ·  {step * 1000:.1f} ms time step  ·  {data.duration:.2f} s")
 
     def _save_image_dialog(self):
         if self.current_data is None:
@@ -175,5 +191,6 @@ class SpectrogramWidget(QWidget):
         self.save_button.setEnabled(False)
         self.mask_button.setEnabled(False)
         self.mask_roi.setVisible(False)
+        self.live_playhead.setVisible(False)
         self.image.clear()
         self.info_label.setText(message or "Selection changed. Generate a new spectrogram from the sidebar.")
