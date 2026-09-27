@@ -1,208 +1,123 @@
 # SonicCraft
 
-SonicCraft is a local PyQt6 desktop audio editor for a university Signals & Systems
-course. The desktop interface reuses the existing `soniccraft` NumPy/SciPy DSP
-package. Running the desktop app does not start a web server, use a database, or
-contact an external service.
+A local audio editor for the CSE 220 Signals & Systems project. SonicCraft uses
+PyQt6 and PyQtGraph for its desktop interface, NumPy and SciPy for DSP, and
+SoundFile/sounddevice for audio files and playback. It runs without a web server,
+database, or network service.
 
-## Current desktop features
+## Install and run
 
-**Verified baseline — 2026-09-12: Phase 7 — Noise Reduction is the last
-consecutively completed core milestone.** Phases 1–7 provide the desktop lifecycle,
-audio I/O, metadata, transport, waveform/selection, sample editing, gain/fades,
-undo/redo/reset, four filter types, nine-band EQ and noise reduction. These are
-implemented and automated-tested; physical speaker and microphone operation remains
-unverified. Optional wavelet denoising is absent.
-
-FFT (Phase 8), file spectrograms (Phase 9) and live spectrograms (Phase 11) are
-**partially implemented**, with the limits below. Spectral editing/reconstruction
-(Phase 10) and the optional DSP Lab (Phase 12) have **DSP support only**.
-Phase 13 final integration remains pending.
-
-The next milestones are explicitly **planned: 7A — Stereo Channel Workspace**
-(separate Left/Right lanes, linked/unlinked editing, gain/mute/solo, channel-aware
-analysis and channel export), then **7B — Multitrack Mixing** (multiple tracks,
-timeline offsets, levels/mute/solo, sample-rate compatibility, combined playback
-and protected mixdown export). Then finish **8 → 9 → 10 → 11**, retain **12 as
-optional**, and complete **13 acceptance**. See the
-[implementation plan](docs/implementation-plan.md) for requirements and implementation/test
-evidence, and [architecture](docs/architecture.md) for runtime responsibilities.
-
-## Studio workspace
-
-The native interface uses graphite panels, mint accents, vector transport icons,
-and a resizable waveform/analysis workspace. Open a file with **Ctrl+O** or drop a
-single local audio file into the window. Signal cards display duration, sample
-rate, channel count, and peak level in dBFS; compact windows prioritize the
-waveform and keep processing controls available in scrollable panels.
-
-- **Space** plays or pauses; **Ctrl+A** selects all audio; **Ctrl+J** focuses the
-  waveform on the selected range. **Fit audio** restores the full view.
-- The transport uses one alternating **Play/Pause** button. Pause retains the
-  playback position; Play resumes it. Stop or reaching the end returns the button
-  to Play.
-- **Reset audio**, at the bottom of the sidebar and in the Edit menu, restores
-  the original loaded audio and selects its full range. It remains available
-  after the ordinary undo history expires, and the reset itself is undoable with
-  **Ctrl+Z**. Exported files are not changed by resetting the document.
-- Enter exact selection boundaries in seconds, or drag the waveform region.
-- The left **Tool Library** uses drill-down navigation: choose a category, then
-  a feature. **Back to category** and **All tools** return one level without
-  resetting your parameters. Controls remain in the sidebar; the lower workspace
-  is reserved for analysis.
-- **Edit & Dynamics** contains selection edits, gain, and fades.
-  **Filters & Equalizer** contains frequency filtering and nine synchronized
-  faders/numeric controls. Bands at or above Nyquist are disabled.
-  **Noise Reduction** contains noise-profile capture and restoration methods.
-- **Spectrum Analyzer** displays FFT magnitude for up to the first 65,536
-  selected samples. **Spectrogram** generates a time-frequency heatmap of the
-  complete selection with a configurable FFT size and window. Changing the
-  selection or transform settings clears the old map until you regenerate it.
-- **Live Spectrogram** opens the chosen microphone only after **Start monitoring**.
-  It displays up to eight seconds of recent audio in memory. **Stop monitoring**,
-  switching to another analysis view, starting playback/processing, or closing
-  the app releases the microphone. It does not record an audio file.
-- FFT, file/live spectrograms, and filter-response previews share the lower
-  workspace. **Ctrl+Z** undoes an edit; **Ctrl+S** exports WAV or FLAC.
-- Playback, processing, unsaved changes, and over-full-scale audio have visible
-  status indicators. Dropping a replacement file respects unsaved-change prompts.
-
-The existing DSP core already implements editing primitives, gain/fades, filters,
-parametric EQ, noise reduction, FFT/STFT, reconstruction, convolution, resampling
-and `mix_audio()`. Mixing is currently a DSP helper, with no desktop multitrack
-workspace. The core is retained in place rather than copied into GUI code. A Wiener
-denoising edge case on silent audio was fixed and tested during this migration.
-
-## Installation and running
-
-Python 3.11 or newer is required. The current Windows environment was verified
-with Python 3.14, PyQt6 6.11.0, and PyQtGraph 0.14.0.
-
-From the repository root in PowerShell:
+Python 3.11 or newer is required. From the repository root on Windows:
 
 ```powershell
-python -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe main.py
 ```
 
-On macOS/Linux, use `.venv/bin/python` instead of `.venv\Scripts\python.exe`.
-Once the environment is activated, `soniccraft` is also available as a desktop
-entry point.
+`requirements.txt` installs this checkout, including the desktop and test extras.
+It does not download an older SonicCraft revision. You can also run the installed
+`soniccraft` command. On Linux/macOS, use `.venv/bin/python` instead.
 
-The install uses PyQt6, PyQtGraph, NumPy, SciPy, SoundFile, and Sounddevice,
-plus their dependencies.
-Runtime operation is offline; initial dependency installation needs packages
-available locally or through a package index.
+## Implemented features
 
-## Structure
+| Feature | Behavior |
+|---|---|
+| File I/O | Open mono/stereo WAV, FLAC, OGG, AIFF and supported MP3 files. Export WAV/FLAC as 24-bit PCM. |
+| Transport | Play/pause, resume, stop, device selection, keyboard shortcuts and drag-and-drop opening. |
+| Waveform | Separate stereo lanes, dimmed played audio, fitted graphs and exact time selections. |
+| Channel editing | Target both channels, left, or right. Trim/delete keep channels synchronized. |
+| Editing | Trim, delete, reverse, silence, peak normalization, gain and three fade curves. |
+| Filters | Low-pass, high-pass, band-pass and band-stop Butterworth filters. |
+| Equalizer | Nine peaking bands with synchronized sliders/numeric controls and Nyquist validation. |
+| Noise reduction | Capture a noise profile, then use spectral subtraction or gating; local Wiener filtering also available. |
+| Live previews | EQ, filter and noise parameters update playback through background rendering. Apply commits one undoable edit. |
+| FFT | Analyze the full selection. Long selections use averaged overlapping windows at the original sample rate. |
+| Spectrogram | Configurable FFT/window, dB or normalized magnitude, bounded display, selected-channel analysis. |
+| Spectral editing | Mute a time-frequency rectangle using the displayed FFT/window and selected channel. |
+| Microphone | Live spectrogram with an eight-second history and optional recording into the document. |
+| Mixing | Add/remove tracks, offsets, volume, mute, sample-rate conversion and protected mixdown. |
+| Image synthesis | Import a spectrogram image and estimate phase with Griffin-Lim to synthesize audio. |
+| Recovery | Undo/redo, per-tool parameter reset and a master reset to the original audio. |
 
-```text
-main.py                            Desktop launcher
-requirements.txt                   Desktop installation entry point
-backend/src/soniccraft/
-  desktop/
-    main.py                        QApplication and lifecycle
-    main_window.py                 Window, actions, menus, toolbar, status
-    sidebar.py                     Category/feature navigation and controls
-    waveform_widget.py             Waveform and selection plotting
-    spectrum_widget.py             FFT magnitude display
-    spectrogram_widget.py          File/live time-frequency heatmaps
-    analysis.py                    Bounded display transforms
-  audio_io.py                      Existing SoundFile decoding and encoding
-  dsp/                             Existing independent DSP implementation
-backend/tests/                     DSP and desktop tests
-docs/implementation-plan.md        Authoritative phased desktop plan
-```
+All graphs stay fitted to their workspace. Trackpad gestures do not zoom, pan or
+change axis units. Selection handles and the spectral rectangle remain draggable.
 
-The `backend/` directory name is retained to preserve the existing package layout.
-The desktop imports the Python DSP package directly; there is no frontend/backend
-HTTP boundary in the new application.
+### Preview, Apply, Export and Reset
+
+- Changing EQ, filter or noise parameters previews from the committed audio.
+  Apply saves the result inside the app. Apply before switching effects to keep
+  multiple changes. Preview delay includes rendering time.
+- Export writes the committed document to a file. It uses a temporary file and
+  atomic replacement. Overloaded audio requires normalization or explicit export
+  scaling; the stored samples are not silently clipped.
+- A tool's reset restores only its parameters and clears its current preview.
+  It preserves edits that were already applied.
+- The bottom **Reset audio** restores the original loaded audio, resets all tool
+  settings and clears the noise profile. The reset is undoable. Mixer imports
+  remain available while their offsets, volumes and mute controls reset.
+- Synthesized audio, recordings and mixdowns remain unsaved until exported.
+  Replacing a document with unsaved edits requires confirmation.
+
+### Shortcuts
+
+`Ctrl+O`: open. `Ctrl+S`: export. `Space`: play/pause. `Ctrl+Z`: undo.
+`Ctrl+Y`: redo. `Ctrl+A`: select all. `Ctrl+J`: fit audio.
 
 ## Verification
 
-The 2026-09-12 audit passed **48 unittest tests** and **49 pytest tests**.
-Pytest also discovers the standalone `test_fft_dominant_frequency` function in
-`backend/tests/test_transforms.py`, which unittest skips. Compilation, dependency
-checks and startup/shutdown smoke testing passed as well. These results cover
-automated behavior; audio-stream tests use simulated drivers, leaving physical
-speaker and microphone operation unverified.
-
-Install the development extra to include pytest:
-
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e "./backend[desktop,dev]"
-```
-
-Run from the repository root:
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s backend/tests -v
 .\.venv\Scripts\python.exe -m pytest backend/tests -o addopts='' -q
 .\.venv\Scripts\python.exe -m compileall -q main.py backend/src/soniccraft
 .\.venv\Scripts\python.exe -m pip check
 .\.venv\Scripts\python.exe main.py --smoke-test
 ```
 
-The smoke test runs the real Qt event loop, shows the main window, and closes it
-automatically. For an automated environment without a display, set
-`$env:QT_QPA_PLATFORM = 'offscreen'` first in PowerShell.
+For headless startup testing, set `$env:QT_QPA_PLATFORM = 'offscreen'` before the
+smoke command. Automated tests use real Qt widgets and simulated audio drivers.
+Check physical speakers, microphone and projector before the evaluation.
 
-Desktop tests cover lifecycle, local I/O, edits/effects, selection, sidebar and
-analysis navigation, reset, and simulated transport/live streams. DSP tests check
-known signals and numerical results. The plan links each completed milestone to
-its implementation and test evidence; passing the suite does not close the known
-FFT defects or missing analysis requirements.
+## Repository map
 
-## DSP course connections
+- `main.py`: repository launcher.
+- `backend/pyproject.toml`: package metadata and dependency declarations.
+- `backend/src/soniccraft/desktop/`: UI, audio document, workers and stream lifecycle.
+- `backend/src/soniccraft/dsp/`: algorithms connected to the implemented features.
+- `backend/src/soniccraft/audio_io.py`: file decoding, encoding and metadata.
+- `backend/tests/`: numerical, I/O, workflow and UI regression tests.
+- `docs/architecture.md`: feature-to-module map and design decisions.
+- `Presentation/`: slide source, reproducible figures, rehearsal guide and demo audio.
+- `output/pdf/SonicCraft_CSE220_Final_Presentation.pdf`: submission presentation.
 
-These functions exist in the shared core. Editing, gain/fades, filters/EQ and noise
-reduction are connected to desktop controls. FFT and spectrogram controls are
-partial; reconstruction, multitrack mixing and interactive DSP Lab workflows
-remain planned. Fourier-series and convolution utilities are also core-only.
+The `backend` directory is the Python package, not an HTTP backend. Tests,
+documentation, packaging assets and presentation material support the delivered
+application. Unconnected DSP exercises and superseded plans/slides have been removed.
 
-| Course concept | Existing DSP implementation |
-| --- | --- |
-| Discrete-time signals | Mono/stereo NumPy samples and sample rates |
-| Amplitude scaling | `apply_gain`: y[n] = 10^(G_dB/20) x[n] |
-| Time-domain editing | `trim_audio`, `split_audio`, concatenation |
-| Signal superposition | `mix_audio()` with offsets and gains; desktop mixing planned |
-| LTI systems and frequency response | Butterworth/notch filters and SOS parametric EQ |
-| Convolution | Direct and FFT convolution |
-| Fourier analysis | FFT, Fourier series, and calibrated magnitude spectra |
-| Sampling and aliasing | Polyphase resampling and alias-frequency calculation |
-| Time-frequency analysis | STFT and spectrogram |
-| Reconstruction | Weighted overlap-add inverse STFT; Griffin-Lim for missing phase |
-| Noise estimation | Spectral subtraction, spectral gating, local Wiener filtering |
+## Practical limits
 
-Magnitude-only spectrograms lose phase and cannot generally reconstruct the
-original waveform exactly. Full STFT round trips are tested with numerical
-tolerances.
+- The app loads audio into memory and supports mono/stereo documents.
+- Long FFT selections average window magnitudes, trading frequency resolution for
+  bounded transform size. Spectrograms merge adjacent analysis frames by peak
+  magnitude into at most 1,200 columns (320 for live input), retaining brief events.
+- Spectral processing and mixdown enforce a 256 MiB working/output budget.
+  Microphone recording stops at 64 MiB of stored samples. These are limits on those
+  buffers, not guarantees of total process memory use.
+- Noise profiles work best when they contain only the unwanted sound. Strong
+  reduction and abrupt spectral masks can produce artifacts.
+- Image brightness contains no original phase. Image-to-audio synthesis is approximate.
+- Playback and microphone availability depend on the local audio drivers and OS permissions.
 
-## Known limits
+## Presentation
 
-- FFT uses at most the first 65,536 selected samples, so later content may be
-  missed. Stereo dB plots average channel dB values, while dominant-frequency
-  labeling uses mean linear magnitude; their peaks can disagree. Both reproduced
-  discrepancies are recorded in the plan and remain unresolved Phase 8 work.
-- Spectrograms show calibrated one-sided amplitude in dBFS, with colors spanning
-  −100 to 0 dBFS. Stereo files are mixed to mono for the heatmap.
-- File spectrograms provide FFT-size/window controls and plot navigation; explicit
-  hop, frequency-range, magnitude/dB controls and spectrogram-region selection
-  remain incomplete.
-- File spectrograms use at most 1,200 time columns. Longer selections increase
-  the displayed time step, potentially leaving gaps between analysis windows;
-  the view reports its actual time step. These display maps are not used for reconstruction.
-- Live analysis uses background jobs, a fixed 1,024-point FFT, eight seconds of
-  rolling history and at most 320 time columns. Planned FFT-size/frequency-range
-  controls and sensitivity where practical remain outstanding. Microphone
-  availability and operating-system permissions depend on the machine. Automated
-  stream tests use an injected driver rather than recording from physical hardware.
-- Desktop spectral editing and reconstructed-audio playback/export remain absent,
-  despite tested complex STFT/ISTFT support in the core. Saving microphone recordings
-  is also not implemented; monitoring does not record a file.
-- Stereo waveforms are overlaid, and edits currently affect both channels.
-  Independent channel controls/export (7A) and desktop multitrack mixing (7B)
-  are planned next. An interactive DSP Lab is optional future work.
-- Final integration acceptance awaits the remaining required workflows and
-  physical speaker/microphone validation.
+Present the first 13 slides. The remaining slides are Q&A references. The
+[rehearsal guide](Presentation/PRESENTER_GUIDE.md) includes the two-person timing
+and an 80-second demo. Authoring dependencies are separate from the app:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r Presentation/requirements.txt
+.\.venv\Scripts\python.exe Presentation/prepare_presentation_assets.py
+.\.venv\Scripts\python.exe Presentation/build_presentation.py
+```
+
+The presentation builder uses Windows Segoe UI/Consolas fonts. The app itself uses
+Qt font fallbacks and is not tied to those font paths.

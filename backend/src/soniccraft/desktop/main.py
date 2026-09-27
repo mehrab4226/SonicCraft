@@ -27,16 +27,16 @@ def create_application(argv: list[str] | None = None) -> QApplication:
     app.setStyle("Fusion")
     palette = QPalette()
     colors = {
-        QPalette.ColorRole.Window: "#0d1115",
+        QPalette.ColorRole.Window: "#141416",
         QPalette.ColorRole.WindowText: "#eef1f8",
-        QPalette.ColorRole.Base: "#10171c",
-        QPalette.ColorRole.AlternateBase: "#192229",
+        QPalette.ColorRole.Base: "#18181b",
+        QPalette.ColorRole.AlternateBase: "#242428",
         QPalette.ColorRole.Text: "#eef1f8",
-        QPalette.ColorRole.Button: "#202931",
+        QPalette.ColorRole.Button: "#2c2c31",
         QPalette.ColorRole.ButtonText: "#eef1f8",
-        QPalette.ColorRole.Highlight: "#91efd0",
-        QPalette.ColorRole.HighlightedText: "#10271f",
-        QPalette.ColorRole.ToolTipBase: "#263630",
+        QPalette.ColorRole.Highlight: "#e6bd78",
+        QPalette.ColorRole.HighlightedText: "#292116",
+        QPalette.ColorRole.ToolTipBase: "#383026",
         QPalette.ColorRole.ToolTipText: "#eef1f8",
     }
     for role, value in colors.items():

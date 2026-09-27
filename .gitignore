@@ -38,16 +38,4 @@ htmlcov/
 tempCodeRunnerFile.py
 .DS_Store
 Thumbs.db
-build/
-dist/
 *.spec
-# LaTeX build artifacts
-*.aux
-*.fdb_latexmk
-*.fls
-*.log
-*.nav
-*.out
-*.snm
-*.synctex.gz
-*.toc

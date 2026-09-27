@@ -8,7 +8,8 @@ from typing import Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._validation import as_audio_array, broadcast_channels, restore_channels, to_2d, validate_probability, validate_sample_rate
+from ._validation import as_audio_array, broadcast_channels, restore_channels, validate_sample_rate, validate_positive_int
+from .sampling import resample_audio
 
 FadeCurve = Literal["linear", "equal_power", "exponential"]
 
@@ -32,22 +33,6 @@ def normalize_peak(audio: ArrayLike, target_dbfs: float = -1.0) -> NDArray[np.fl
         return samples.copy()
     target = 10.0 ** (target_dbfs / 20.0)
     return samples * (target / peak)
-
-
-def normalize_rms(audio: ArrayLike, target_dbfs: float = -18.0, *, prevent_clipping: bool = True) -> NDArray[np.float64]:
-    """Normalize overall RMS level, optionally limiting the result to 0 dBFS."""
-
-    if target_dbfs > 0 or not np.isfinite(target_dbfs):
-        raise ValueError("target_dbfs must be finite and no greater than 0")
-    samples = as_audio_array(audio)
-    current = float(np.sqrt(np.mean(np.square(samples))))
-    if current == 0:
-        return samples.copy()
-    output = samples * ((10.0 ** (target_dbfs / 20.0)) / current)
-    peak = float(np.max(np.abs(output)))
-    if prevent_clipping and peak > 1.0:
-        output /= peak
-    return output
 
 
 def _fade_curve(length: int, curve: FadeCurve, *, fade_in: bool) -> NDArray[np.float64]:
@@ -94,98 +79,35 @@ def trim_audio(audio: ArrayLike, start_sample: int, end_sample: int) -> NDArray[
     return samples[start_sample:end_sample].copy()
 
 
-def split_audio(audio: ArrayLike, sample_index: int) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    samples = as_audio_array(audio)
-    if not 0 < sample_index < samples.shape[0]:
-        raise ValueError("sample_index must be inside the signal")
-    return samples[:sample_index].copy(), samples[sample_index:].copy()
-
-
-def concatenate_audio(clips: Sequence[ArrayLike]) -> NDArray[np.float64]:
-    if not clips:
-        raise ValueError("clips must contain at least one audio array")
-    converted = [as_audio_array(clip, name=f"clips[{index}]") for index, clip in enumerate(clips)]
-    arrays, channels = broadcast_channels(converted)
-    output = np.concatenate(arrays, axis=0)
-    return restore_channels(output, channels == 1 and all(item.ndim == 1 for item in converted))
-
-
-def _mix_track_dicts(tracks: Sequence[dict], target_rate: int) -> NDArray[np.float64]:
-    if not tracks:
-        raise ValueError("tracks must contain at least one audio array")
-    if isinstance(target_rate, bool) or int(target_rate) != target_rate or target_rate <= 0:
-        raise ValueError("target_rate must be a positive integer")
-
-    active = [track for track in tracks if not track["mute"]]
+def mix_audio(tracks: Sequence[dict], target_rate: int) -> NDArray[np.float64]:
+    """Resample, offset and mix unmuted timeline tracks; protect the output peak."""
+    rate = validate_positive_int(target_rate, name="target_rate")
+    active = [track for track in tracks if not track.get("mute", False)]
     if not active:
-        raise ValueError("at least one track must be unmuted")
-    converted = [as_audio_array(track["samples"], name="track samples") for track in active]
-    channels = 2 if any(samples.ndim == 2 for samples in converted) else 1
-    offsets = [int(float(track["offset"]) * target_rate) for track in active]
-    if any(offset < 0 for offset in offsets):
-        raise ValueError("track offsets must be non-negative")
-    output_length = max(offset + len(samples) for offset, samples in zip(offsets, converted, strict=True))
-    output = np.zeros((output_length, channels), dtype=np.float64) if channels == 2 else np.zeros(output_length, dtype=np.float64)
-    for track, samples, offset in zip(active, converted, offsets, strict=True):
-        scaled = samples * float(track["volume"])
-        if channels == 2 and scaled.ndim == 1:
-            scaled = scaled[:, None]
-        output[offset : offset + len(samples)] += scaled
-    peak = float(np.max(np.abs(output)))
-    if peak > 1.0:
-        output /= peak
-    return output
-
-
-def mix_audio(
-    tracks: Sequence[ArrayLike] | Sequence[dict],
-    target_rate: int | None = None,
-    *,
-    offsets: Sequence[int] | None = None,
-    gains_db: Sequence[float] | None = None,
-    normalize: bool = False,
-) -> NDArray[np.float64]:
-    """Mix legacy array tracks or timeline-aware multitrack dictionaries."""
-
-    if target_rate is not None:
-        return _mix_track_dicts(tracks, target_rate)
-
-    if not tracks:
-        raise ValueError("tracks must contain at least one audio array")
-    converted = [as_audio_array(track, name=f"tracks[{index}]") for index, track in enumerate(tracks)]
+        raise ValueError("At least one track must be unmuted.")
+    converted, offsets, volumes = [], [], []
+    for track in active:
+        offset, volume = float(track.get("offset", 0)), float(track.get("volume", 1))
+        if not np.isfinite(offset) or offset < 0 or not np.isfinite(volume) or volume < 0:
+            raise ValueError("Track offsets and volumes must be finite and non-negative.")
+        samples = as_audio_array(track["samples"], name="track samples")
+        source_rate = validate_positive_int(track["sample_rate"], name="track sample_rate")
+        channels = 1 if samples.ndim == 1 else samples.shape[1]
+        if (round(offset * rate) + int(np.ceil(len(samples) * rate / source_rate))) * channels * 8 > 256 * 1024 * 1024:
+            raise ValueError("Mix exceeds the 256 MiB audio budget. Reduce track lengths or offsets.")
+        if source_rate != rate:
+            samples = resample_audio(samples, source_rate, rate)
+        converted.append(samples)
+        offsets.append(round(offset * rate))
+        volumes.append(volume)
     arrays, channels = broadcast_channels(converted)
-    track_offsets = list(offsets) if offsets is not None else [0] * len(arrays)
-    gains = list(gains_db) if gains_db is not None else [0.0] * len(arrays)
-    if len(track_offsets) != len(arrays) or len(gains) != len(arrays):
-        raise ValueError("offsets and gains_db must match the number of tracks")
-    if any(isinstance(value, bool) or int(value) != value or value < 0 for value in track_offsets):
-        raise ValueError("offsets must be non-negative integers")
-    if not np.all(np.isfinite(gains)):
-        raise ValueError("gains_db must contain only finite values")
-
-    output_length = max(int(offset) + track.shape[0] for offset, track in zip(track_offsets, arrays, strict=True))
-    output = np.zeros((output_length, channels), dtype=np.float64)
-    for track, offset, gain in zip(arrays, track_offsets, gains, strict=True):
-        start = int(offset)
-        output[start : start + track.shape[0]] += track * (10.0 ** (float(gain) / 20.0))
-
-    if normalize:
-        peak = float(np.max(np.abs(output)))
-        if peak > 1.0:
-            output /= peak
-    return restore_channels(output, channels == 1 and all(item.ndim == 1 for item in converted))
-
-
-def hard_clip(audio: ArrayLike, threshold: float = 1.0) -> NDArray[np.float64]:
-    if not 0 < threshold <= 1.0:
-        raise ValueError("threshold must be in (0, 1]")
-    return np.clip(as_audio_array(audio), -threshold, threshold)
-
-
-def soft_clip(audio: ArrayLike, drive: float = 1.0) -> NDArray[np.float64]:
-    """Apply normalized tanh saturation without exceeding full scale."""
-
-    if drive <= 0 or not np.isfinite(drive):
-        raise ValueError("drive must be finite and positive")
-    samples = as_audio_array(audio)
-    return np.tanh(samples * drive) / np.tanh(drive)
+    length = max(offset + len(samples) for offset, samples in zip(offsets, arrays, strict=True))
+    if length * channels * 8 > 256 * 1024 * 1024:
+        raise ValueError("Mix exceeds the 256 MiB audio budget. Reduce track lengths or offsets.")
+    output = np.zeros((length, channels), dtype=np.float64)
+    for samples, offset, volume in zip(arrays, offsets, volumes, strict=True):
+        output[offset:offset + len(samples)] += samples * volume
+    peak = float(np.max(np.abs(output)))
+    if peak > 1:
+        output /= peak
+    return restore_channels(output, channels == 1)

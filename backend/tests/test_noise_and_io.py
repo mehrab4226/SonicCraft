@@ -4,12 +4,12 @@ from pathlib import Path
 
 import numpy as np
 
-from soniccraft.audio_io import inspect_audio, load_audio, read_audio_bytes, save_audio, write_audio_bytes
+from soniccraft.audio_io import inspect_audio, load_audio, save_audio
 from soniccraft.dsp.noise_reduction import estimate_noise_profile, spectral_gate, spectral_subtraction, wiener_denoise
 
 
 class NoiseAndIOTests(unittest.TestCase):
-    def test_audio_file_and_byte_round_trips(self):
+    def test_audio_file_round_trip(self):
         sample_rate = 8_000
         samples = 0.25 * np.sin(2 * np.pi * 440 * np.arange(sample_rate) / sample_rate)
         with tempfile.TemporaryDirectory() as directory:
@@ -22,11 +22,7 @@ class NoiseAndIOTests(unittest.TestCase):
             self.assertEqual(metadata.frames, sample_rate)
             self.assertEqual(metadata.channels, 1)
 
-        payload = write_audio_bytes(samples, sample_rate)
-        from_bytes, byte_rate, byte_metadata = read_audio_bytes(payload)
-        self.assertEqual(byte_rate, sample_rate)
-        self.assertEqual(byte_metadata.frames, sample_rate)
-        np.testing.assert_allclose(from_bytes, samples, atol=4e-5)
+            np.testing.assert_allclose(decoded, samples, atol=4e-5)
 
     def test_wiener_handles_silence_and_preserves_independent_channels(self):
         from scipy.signal import wiener

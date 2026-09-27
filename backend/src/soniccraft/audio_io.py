@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO
 
@@ -71,36 +70,3 @@ def save_audio(
     samples = as_audio_array(audio)
     rate = int(validate_sample_rate(sample_rate))
     sf.write(output, samples, rate, subtype=subtype, format=format)
-
-
-def read_audio_bytes(
-    payload: bytes,
-    *,
-    dtype: str = "float64",
-    always_2d: bool = False,
-) -> tuple[NDArray[np.floating], int, AudioMetadata]:
-    """Decode uploaded audio bytes without writing a temporary file."""
-
-    if not payload:
-        raise ValueError("payload must not be empty")
-    buffer = BytesIO(payload)
-    info = sf.info(buffer)
-    buffer.seek(0)
-    data, sample_rate = sf.read(buffer, dtype=dtype, always_2d=always_2d)
-    return np.asarray(data), int(sample_rate), _metadata(info)
-
-
-def write_audio_bytes(
-    audio: ArrayLike,
-    sample_rate: int,
-    *,
-    format: str = "WAV",
-    subtype: str = "PCM_16",
-) -> bytes:
-    """Encode processed audio for an HTTP response or browser download."""
-
-    samples = as_audio_array(audio)
-    rate = int(validate_sample_rate(sample_rate))
-    buffer = BytesIO()
-    sf.write(buffer, samples, rate, format=format, subtype=subtype)
-    return buffer.getvalue()

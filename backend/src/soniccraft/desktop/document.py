@@ -1,5 +1,6 @@
 """Audio document and bounded snapshot history, independent of Qt."""
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 import os
 import tempfile
@@ -38,7 +39,7 @@ class AudioData:
     def duration(self):
         return len(self.samples) / self.sample_rate
 
-    @property
+    @cached_property
     def peak(self):
         return float(np.max(np.abs(self.samples)))
 

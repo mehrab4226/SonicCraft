@@ -39,15 +39,44 @@ def field(layout, title, widget):
 class EffectsPanel(QWidget):
     """Build reusable control cards; the sidebar owns their visible pages."""
     requested = pyqtSignal(str, object)
-    preview_requested = pyqtSignal(str, object)
+    live_requested = pyqtSignal(str, str, object)
     profile_requested = pyqtSignal()
+    reset_requested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.groups = []
+        self.reset_buttons = {}
         self._editing()
         self._filters()
         self._noise()
+        self._feature_defaults = {
+            "gain": ((self.gain, 0),),
+            "fades": ((self.fade_duration, .1), (self.fade_curve, 0)),
+            "filter": ((self.filter_kind, 0), (self.order, 4), (self.low, 1000), (self.high, 3000)),
+            "eq": tuple((gain, 0) for gain in self.eq_bands.values()),
+            "reduction": ((self.noise_method, 0), (self.noise_strength, 1.5), (self.wiener_window, 29)),
+            "profile": (),
+        }
+        for control in (self.low, self.high, self.order):
+            control.valueChanged.connect(lambda: self.live_requested.emit("filter", "filter", self.filter_parameters()))
+        self.filter_kind.currentIndexChanged.connect(lambda: self.live_requested.emit("filter", "filter", self.filter_parameters()))
+        for gain in self.eq_bands.values():
+            gain.valueChanged.connect(lambda: self.live_requested.emit("eq", "eq", self.eq_parameters()))
+        self.noise_method.currentIndexChanged.connect(self._preview_noise)
+        self.noise_strength.valueChanged.connect(self._preview_noise)
+        self.wiener_window.valueChanged.connect(self._preview_noise)
+        for control in (self.eq_button, self.filter_button, self.noise_button):
+            control.setToolTip("Save this preview to the audio in the app. Ctrl+Z undoes it; Export writes a file.")
+
+    def _reset_button(self, layout, feature, title):
+        control = button(layout, title, lambda: self.reset_feature(feature))
+        control.setToolTip("Reset only this tool's settings. Applied audio edits and other tools stay unchanged.")
+        self.reset_buttons[feature] = control
+
+    def reset_feature(self, feature):
+        self.reset_parameters(feature)
+        self.reset_requested.emit(feature)
 
     def _page(self, title):
         page = QWidget(self)
@@ -66,7 +95,7 @@ class EffectsPanel(QWidget):
             "trim": "Keep only the selected audio",
             "delete": "Remove the selected audio and close the gap",
             "reverse": "Reverse the samples in the selection",
-            "normalize": "Scale the selection to full scale",
+            "normalize": "Set the selection peak to -1 dBFS",
             "silence": "Replace the selection with silence, keeping its duration",
         }
         for index, name in enumerate(hints):
@@ -88,6 +117,7 @@ class EffectsPanel(QWidget):
         gain.addWidget(self.gain)
         self.gain_button = button(gain, "Apply gain", lambda: self.requested.emit("gain", {"gain_db": self.gain.value()}))
         self.gain_button.setProperty("primary", True)
+        self._reset_button(gain, "gain", "Reset gain")
         gain.addStretch()
         layout.addWidget(gain_card, 2)
 
@@ -107,12 +137,13 @@ class EffectsPanel(QWidget):
                 "fade", {"seconds": self.fade_duration.value(), "direction": d, "curve": self.fade_curve.currentData()}
             ))
         fade.addLayout(row)
+        self._reset_button(fade, "fades", "Reset fades")
         fade.addStretch()
         layout.addWidget(fade_card, 4)
 
     def _filters(self):
         layout = self._page("Filters && EQ")
-        filter_card, filters = card("Frequency filter")
+        filter_card, filters = card("Frequency filter", "Hear changes during playback. Apply saves them to the audio.")
         self.filter_kind = QComboBox()
         for text, value in (("Low-pass", "lowpass"), ("High-pass", "highpass"), ("Band-pass", "bandpass"), ("Band-stop", "bandstop")):
             self.filter_kind.addItem(text, value)
@@ -137,14 +168,14 @@ class EffectsPanel(QWidget):
         row = QHBoxLayout()
         self.filter_button = button(row, "Apply filter", lambda: self.requested.emit("filter", self.filter_parameters()))
         self.filter_button.setProperty("primary", True)
-        button(row, "Response", lambda: self.preview_requested.emit("filter", self.filter_parameters()))
         filters.addLayout(row)
+        self._reset_button(filters, "filter", "Reset filter")
         filters.addStretch()
         self.filter_kind.currentIndexChanged.connect(self._update_filter_fields)
         self._update_filter_fields()
         layout.addWidget(filter_card, 3)
 
-        eq_card, equalizer = card("9-band equalizer")
+        eq_card, equalizer = card("9-band equalizer", "Hear changes during playback. Apply EQ saves them to the audio.")
         bands = QVBoxLayout()
         bands.setSpacing(6)
         self.eq_bands = {}
@@ -176,8 +207,7 @@ class EffectsPanel(QWidget):
         row = QVBoxLayout()
         self.eq_button = button(row, "Apply EQ", lambda: self.requested.emit("eq", self.eq_parameters()))
         self.eq_button.setProperty("primary", True)
-        button(row, "Response", lambda: self.preview_requested.emit("eq", self.eq_parameters()))
-        button(row, "Reset", self.reset_eq)
+        self._reset_button(row, "eq", "Reset EQ")
         equalizer.addLayout(row)
         layout.addWidget(eq_card, 5)
 
@@ -200,6 +230,32 @@ class EffectsPanel(QWidget):
     def reset_eq(self):
         for gain in self.eq_bands.values():
             gain.setValue(0)
+
+    @property
+    def has_parameter_changes(self):
+        for control, default in self._defaults():
+            if isinstance(control, QComboBox):
+                if control.currentIndex() != default:
+                    return True
+            elif control.value() != min(control.maximum(), max(control.minimum(), default)):
+                return True
+        return False
+
+    def _defaults(self, feature=None):
+        groups = self._feature_defaults.values() if feature is None else (self._feature_defaults[feature],)
+        return (entry for group in groups for entry in group)
+
+    def reset_parameters(self, feature=None):
+        """Restore one tool or all effect controls without starting a preview."""
+        blocked = self.blockSignals(True)
+        try:
+            for control, default in self._defaults(feature):
+                if isinstance(control, QComboBox):
+                    control.setCurrentIndex(default)
+                else:
+                    control.setValue(default)
+        finally:
+            self.blockSignals(blocked)
 
     def filter_parameters(self):
         return {"kind": self.filter_kind.currentData(), "low": self.low.value(), "high": self.high.value(), "order": self.order.value()}
@@ -225,9 +281,10 @@ class EffectsPanel(QWidget):
         self.profile_label.setWordWrap(True)
         profile.addWidget(self.profile_label)
         self.profile_button = button(profile, "Capture noise profile", self.profile_requested.emit)
+        self._reset_button(profile, "profile", "Reset noise profile")
         profile.addStretch()
         layout.addWidget(profile_card, 3)
-        noise_card, noise = card("02  Restore the signal", "Select the audio to clean, choose a method, then apply.")
+        noise_card, noise = card("02  Restore the signal", "Adjust to preview during playback. Apply saves the result to the audio.")
         self.noise_method = QComboBox()
         self.noise_method.addItems(["Frequency filter · uses Filters & EQ settings", "Spectral subtraction", "Wiener", "Spectral gate"])
         self.noise_method.setAccessibleName("Noise reduction method")
@@ -243,6 +300,7 @@ class EffectsPanel(QWidget):
         noise.addLayout(row)
         self.noise_button = button(noise, "Apply noise reduction", self._request_noise)
         self.noise_button.setProperty("primary", True)
+        self._reset_button(noise, "reduction", "Reset noise reduction")
         noise.addStretch()
         layout.addWidget(noise_card, 5)
         self.noise_method.currentIndexChanged.connect(self._update_noise_fields)
@@ -254,8 +312,14 @@ class EffectsPanel(QWidget):
         self.wiener_window.setEnabled(index == 2)
 
     def _request_noise(self):
+        self.requested.emit(*self.noise_parameters())
+
+    def _preview_noise(self):
+        self.live_requested.emit("reduction", *self.noise_parameters())
+
+    def noise_parameters(self):
         operation = ("filter", "subtraction", "wiener", "gate")[self.noise_method.currentIndex()]
         params = self.filter_parameters() if operation == "filter" else {
             "strength": self.noise_strength.value(), "window_size": self.wiener_window.value(),
         }
-        self.requested.emit(operation, params)
+        return operation, params

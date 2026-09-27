@@ -1,6 +1,8 @@
+"""Spectrum display with matching peak detection and channel averaging."""
+import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox
-from soniccraft.dsp.transforms import Spectrum
+from soniccraft.dsp.transforms import Spectrum, magnitude_to_db
 from soniccraft.dsp.analysis import get_dominant_frequency
 from .theme import style_plot
 
@@ -30,14 +32,14 @@ class SpectrumWidget(QWidget):
         layout.addLayout(top_bar)
         
         # The PyQtGraph Plot
-        self.plot_widget = pg.PlotWidget(background="#0b0f16")
+        self.plot_widget = pg.PlotWidget(background="#141416")
         style_plot(self.plot_widget)
         self.plot_widget.setMinimumHeight(100)
         self.plot_widget.setLabel("bottom", "Frequency", units="Hz")
         self.plot_widget.setLabel("left", "Magnitude", units="dB")
         
         # The line drawn on the graph
-        self.plot_curve = self.plot_widget.plot(pen="#64d6cd")
+        self.plot_curve = self.plot_widget.plot(pen="#e6bd78")
         layout.addWidget(self.plot_widget)
         
         self.current_spectrum = None
@@ -61,18 +63,21 @@ class SpectrumWidget(QWidget):
             
         x = self.current_spectrum.frequencies
         
+        magnitude = self.current_spectrum.magnitude
+        if magnitude.ndim > 1:
+            magnitude = magnitude.mean(axis=1)
         if self.scale_combo.currentIndex() == 0:
             # dB Scale
-            y = self.current_spectrum.magnitude_db
+            y = magnitude_to_db(magnitude)
             self.plot_widget.setLabel("left", "Magnitude", units="dB")
         else:
             # Linear Scale
-            y = self.current_spectrum.magnitude
+            y = magnitude
             self.plot_widget.setLabel("left", "Magnitude", units="Linear")
             
-        # FIX: If the audio is stereo (2D array), average the channels to mono for the plot
-        import numpy as np
-        if y.ndim > 1:
-            y = np.mean(y, axis=1)
-            
         self.plot_curve.setData(x, y)
+        self.plot_widget.setXRange(0, max(float(x[-1]), 1), padding=0)
+        if self.scale_combo.currentIndex() == 0:
+            self.plot_widget.setYRange(-120, max(6, float(np.max(y)) + 3), padding=0)
+        else:
+            self.plot_widget.setYRange(0, max(0.001, float(np.max(y)) * 1.05), padding=0)

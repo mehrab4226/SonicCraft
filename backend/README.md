@@ -1,48 +1,22 @@
-# SonicCraft DSP backend
+# SonicCraft Python package
 
-Framework-independent Python DSP utilities reused by the local PyQt6 desktop app.
-The desktop foundation lives in `soniccraft.desktop`; see the root README for
-installation and launch instructions.
-All audio arrays follow one convention:
+The package contains the desktop editor and its feature-specific DSP code.
+See the [project README](../README.md) for setup, features and verification.
 
-- mono: `(samples,)`
-- multichannel: `(samples, channels)`
-- floating-point samples are expected in the nominal range `[-1.0, 1.0]`
+Audio uses float64 arrays shaped `(samples,)` for mono or `(samples, channels)`
+for stereo. DSP functions return new arrays. `AudioData` owns a read-only snapshot.
 
-## Modules
+| Module | Connected feature |
+|---|---|
+| `audio_io` | Import/export and metadata |
+| `dsp.effects` | Gain, peak normalization, fades, trimming and multitrack mixdown |
+| `dsp.filters` | Butterworth filters, peaking EQ and response plots |
+| `dsp.noise_reduction` | Noise profiles, subtraction, gating and Wiener filtering |
+| `dsp.sampling` | Convert mixer tracks to the output sample rate |
+| `dsp.transforms` | FFT, STFT, reconstruction and image synthesis |
+| `dsp.analysis` | Spectrum peak frequency |
+| `dsp._validation` | Shared signal/rate/channel validation |
+| `desktop` | Widgets, document history, processing jobs and audio streams |
 
-- `soniccraft.audio_io` — file/byte decoding, encoding, and metadata
-- `soniccraft.dsp.analysis` — levels, clipping, and waveform summaries
-- `soniccraft.dsp.convolution` — linear/circular convolution and correlation
-- `soniccraft.dsp.effects` — editing, mixing, gain, normalization, and fades
-- `soniccraft.dsp.filters` — Butterworth, notch, and parametric equalizers
-- `soniccraft.dsp.noise_reduction` — spectral gate/subtraction and Wiener filtering
-- `soniccraft.dsp.sampling` — resampling, alias calculations, and sinc reconstruction
-- `soniccraft.dsp.transforms` — DFT/FFT, Fourier series, STFT, spectrogram, and Griffin-Lim
-
-Core DSP installation has no Qt or web-framework dependency. The `desktop`
-extra adds PyQt6/PyQtGraph. DSP functions remain independent of the desktop UI.
-
-## Example
-
-```python
-from soniccraft import load_audio, save_audio
-from soniccraft.dsp.filters import highpass
-from soniccraft.dsp.transforms import fft_spectrum
-
-audio, sample_rate = load_audio("recording.wav")
-cleaned = highpass(audio, sample_rate, cutoff=80, zero_phase=True)
-spectrum = fft_spectrum(cleaned, sample_rate, n_fft=4096)
-save_audio("cleaned.wav", cleaned, sample_rate, subtype="PCM_16")
-
-peak_frequency = spectrum.frequencies[spectrum.magnitude.argmax()]
-print(f"Strongest frequency: {peak_frequency:.1f} Hz")
-```
-
-## Tests
-
-From the repository root:
-
-```bash
-python -m unittest discover -s backend/tests -v
-```
+Install from the repository root with `python -m pip install -e "./backend[desktop,dev]"`.
+Run tests with `python -m pytest backend/tests`.

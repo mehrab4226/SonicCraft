@@ -20,6 +20,7 @@ class FeatureSidebar(QFrame):
     spectrogram_requested = pyqtSignal()
     live_start_requested = pyqtSignal()
     live_stop_requested = pyqtSignal()
+    reset_requested = pyqtSignal(str)
 
     def __init__(self, effects, parent=None):
         super().__init__(parent)
@@ -31,6 +32,7 @@ class FeatureSidebar(QFrame):
         self.category_buttons = {}
         self.feature_buttons = {}
         self.audio_controls = []
+        self.reset_buttons = {}
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 16, 14, 14)
         layout.setSpacing(12)
@@ -94,6 +96,7 @@ class FeatureSidebar(QFrame):
         self.spectrum_scope = label("Open audio to analyze its frequencies.")
         self.spectrum_scope.setWordWrap(True)
         spectrum.addWidget(self.spectrum_scope)
+        self._reset_button(spectrum, "spectrum", "Reset spectrum")
         spectrum.addStretch()
 
         spectrogram = self._page("spectrogram", "Spectrogram", "home")
@@ -110,6 +113,7 @@ class FeatureSidebar(QFrame):
         self.render_button = button(spectrogram, "Generate spectrogram", self.spectrogram_requested.emit)
         self.render_button.setProperty("primary", True)
         self.audio_controls.append(self.render_button)
+        self._reset_button(spectrogram, "spectrogram", "Reset spectrogram")
         spectrogram.addStretch()
 
         live = self._page("live", "Live Spectrogram", "home")
@@ -132,9 +136,37 @@ class FeatureSidebar(QFrame):
         self.record_live = QCheckBox("Record to Document")
         self.record_live.setAccessibleName("Record to Document")
         live.addWidget(self.record_live)
+        self._reset_button(live, "live", "Reset live spectrogram")
+        self._feature_defaults = {
+            "spectrum": (),
+            "spectrogram": ((self.fft_size, 2), (self.window_function, 0)),
+            "live": ((self.input_device, 0), (self.live_fft_size, 1), (self.record_live, False)),
+        }
         self.set_monitoring(False)
         live.addStretch()
         self.navigate("home")
+
+    def _reset_button(self, layout, feature, title):
+        self.reset_buttons[feature] = button(layout, title, lambda: self.reset_feature(feature))
+        self.reset_buttons[feature].setToolTip("Reset only this tool's settings; keep audio edits and other tools unchanged.")
+
+    def reset_feature(self, feature):
+        self.reset_parameters(feature)
+        self.reset_requested.emit(feature)
+
+    def reset_parameters(self, feature=None):
+        groups = self._feature_defaults.values() if feature is None else (self._feature_defaults[feature],)
+        for group in groups:
+            for control, default in group:
+                if isinstance(control, QCheckBox):
+                    control.setChecked(default)
+                else:
+                    control.setCurrentIndex(default)
+
+    @property
+    def has_parameter_changes(self):
+        return any((control.isChecked() if isinstance(control, QCheckBox) else control.currentIndex()) != default
+                   for group in self._feature_defaults.values() for control, default in group)
 
     def _page(self, key, title, parent=None):
         page = QWidget()
@@ -179,4 +211,5 @@ class FeatureSidebar(QFrame):
         self.live_start.setEnabled(not active)
         self.live_stop.setEnabled(active)
         self.input_device.setEnabled(not active)
+        self.record_live.setEnabled(not active)
         self.live_status.setText("● Monitoring microphone" if active else "Microphone is off.")

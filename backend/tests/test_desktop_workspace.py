@@ -61,7 +61,8 @@ class WorkspaceTests(unittest.TestCase):
         low, high = self.window.waveform.viewRange()[0]
         self.assertLessEqual(low, 0.2)
         self.assertGreaterEqual(high, 0.6)
-        self.assertLess(high - low, 0.5)
+        self.assertAlmostEqual(low, 0)
+        self.assertAlmostEqual(high, 1)
         self.window.actions_by_name["select_all"].trigger()
         self.assertEqual(self.window.playback_range(), (0, 8000))
 

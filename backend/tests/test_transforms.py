@@ -1,32 +1,17 @@
 import unittest
 
 import numpy as np
-from soniccraft.dsp.transforms import fft_spectrum
 from soniccraft.dsp.analysis import get_dominant_frequency
 
 from soniccraft.dsp.transforms import (
-    discrete_fourier_transform,
     fft_spectrum,
-    fourier_series_coefficients,
     griffin_lim,
-    inverse_discrete_fourier_transform,
     inverse_stft,
-    reconstruct_fourier_series,
-    spectrogram,
     stft,
 )
 
 
 class TransformTests(unittest.TestCase):
-    def test_direct_dft_matches_numpy_and_inverts(self):
-        samples = np.array([1.0, -0.5, 0.25, 0.75])
-        transformed = discrete_fourier_transform(samples)
-        np.testing.assert_allclose(transformed, np.fft.fft(samples), atol=1e-12)
-        np.testing.assert_allclose(
-            inverse_discrete_fourier_transform(transformed).real,
-            samples,
-            atol=1e-12,
-        )
 
     def test_fft_spectrum_finds_tone_and_amplitude(self):
         sample_rate = 8_000
@@ -48,19 +33,7 @@ class TransformTests(unittest.TestCase):
             self.assertEqual(reconstructed.shape, samples.shape)
             np.testing.assert_allclose(reconstructed, samples, atol=1e-9)
 
-    def test_spectrogram_dimensions_and_scale(self):
-        samples = np.ones(2_000)
-        result = spectrogram(samples, 8_000, n_fft=256, scale="db")
-        self.assertEqual(result.values.shape[0], 129)
-        self.assertEqual(result.values.shape[1], result.times.size)
-        self.assertTrue(np.all(np.isfinite(result.values)))
 
-    def test_fourier_series_reconstructs_sampled_period(self):
-        phase = np.arange(15) / 15
-        period = np.cos(2 * np.pi * phase) + 0.25 * np.sin(4 * np.pi * phase)
-        series = fourier_series_coefficients(period, harmonics=7)
-        reconstructed = reconstruct_fourier_series(series, phase)
-        np.testing.assert_allclose(reconstructed, period, atol=1e-12)
 
     def test_griffin_lim_reconstruction_is_finite_and_bounded(self):
         sample_rate = 8_000

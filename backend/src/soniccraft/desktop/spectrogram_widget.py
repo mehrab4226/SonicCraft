@@ -27,6 +27,8 @@ class SpectrogramWidget(QWidget):
         self.scale_combo.currentIndexChanged.connect(self._replot)
         row.addWidget(self.scale_combo)
         self.mask_button = button(row, "Mute Region", self._request_mask)
+        self.mask_button.setVisible(not live)
+        self.mask_button.setEnabled(False)
         if live:
             self.stop_button = button(row, "Stop monitoring", self.stop_requested.emit)
             self.stop_button.setEnabled(False)
@@ -41,15 +43,29 @@ class SpectrogramWidget(QWidget):
         self.plot.addItem(self.image)
         self.mask_roi = pg.RectROI([0, 0], [0.5, 1000], pen=pg.mkPen("#ffaca6", width=2))
         self.plot.addItem(self.mask_roi)
+        self.mask_roi.setVisible(False)
         self.colormap = pg.ColorMap(
             [0, 0.25, 0.5, 0.75, 1],
-            ["#0d1115", "#28344f", "#5966aa", "#70c5b0", "#f4e6a5"],
+            ["#141416", "#49302f", "#96554b", "#d99270", "#f3d9a0"],
         )
         self.colorbar = pg.ColorBarItem(values=(-100, 0), colorMap=self.colormap, interactive=False, width=12)
         self.colorbar.setImageItem(self.image, insert_in=self.plot.getPlotItem())
         layout.addWidget(self.plot, 1)
         self._frequency_min = 0.0
         self._frequency_max = None
+
+    @property
+    def has_parameter_changes(self):
+        return (self.scale_combo.currentIndex() != 0 or self._frequency_min != 0
+                or self._frequency_max is not None
+                or tuple(self.mask_roi.pos()) != (0, 0)
+                or tuple(self.mask_roi.size()) != (.5, 1000))
+
+    def reset_parameters(self):
+        self.scale_combo.setCurrentIndex(0)
+        self.set_frequency_range()
+        self.mask_roi.setPos((0, 0))
+        self.mask_roi.setSize((.5, 1000))
 
     def _request_mask(self):
         position = self.mask_roi.pos()
@@ -62,6 +78,13 @@ class SpectrogramWidget(QWidget):
 
     def set_data(self, data):
         self.current_data = data
+        self.mask_button.setEnabled(not self.live)
+        self.mask_roi.setVisible(not self.live)
+        position, size = self.mask_roi.pos(), self.mask_roi.size()
+        if (position.x() < data.offset or position.x() + size.x() > data.offset + data.duration
+                or position.y() < 0 or position.y() + size.y() > data.sample_rate / 2):
+            self.mask_roi.setPos((data.offset, 0))
+            self.mask_roi.setSize((min(.5, data.duration), min(1000, data.sample_rate / 2)))
         self._replot()
         # Pixel centers correspond to actual STFT frame centers and FFT bins.
         step = data.hop / data.sample_rate
@@ -70,7 +93,7 @@ class SpectrogramWidget(QWidget):
                                  max(step, data.values.shape[1] * step), data.values.shape[0] * bin_width))
         self.plot.setXRange(data.offset, data.offset + max(data.duration, 1 / data.sample_rate), padding=0)
         self._apply_frequency_range(data.sample_rate / 2)
-        self.info_label.setText(f"{'MICROPHONE' if self.live else 'MONO MIX'}  ·  {data.n_fft} FFT  ·  {step * 1000:.1f} ms time step  ·  {data.duration:.2f} s")
+        self.info_label.setText(f"{'MICROPHONE' if self.live else 'SELECTION'}  ·  {data.n_fft} FFT  ·  {step * 1000:.1f} ms time step  ·  {data.duration:.2f} s")
 
     def set_frequency_range(self, minimum=0.0, maximum=None):
         """Set optional frequency bounds in Hz for the spectrogram view."""
@@ -107,5 +130,7 @@ class SpectrogramWidget(QWidget):
 
     def clear(self, message=None):
         self.current_data = None
+        self.mask_button.setEnabled(False)
+        self.mask_roi.setVisible(False)
         self.image.clear()
         self.info_label.setText(message or "Selection changed. Generate a new spectrogram from the sidebar.")

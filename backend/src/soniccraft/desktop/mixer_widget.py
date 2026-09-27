@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 
 from .document import AudioData
 from .theme import label
+from pathlib import Path
 
 
 class MultitrackMixer(QWidget):
@@ -28,6 +29,10 @@ class MultitrackMixer(QWidget):
         self.mixdown_button.clicked.connect(self._request_mixdown)
         self.mixdown_button.setEnabled(False)
         controls.addWidget(self.mixdown_button)
+        self.reset_button = QPushButton("Reset mixer")
+        self.reset_button.setToolTip("Reset track offsets, volumes and mutes. Keep imported tracks and applied audio edits.")
+        self.reset_button.clicked.connect(self.reset_parameters)
+        controls.addWidget(self.reset_button)
         layout.addLayout(controls)
 
         self.scroll_area = QScrollArea()
@@ -37,6 +42,17 @@ class MultitrackMixer(QWidget):
         self.track_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll_area.setWidget(self.track_container)
         layout.addWidget(self.scroll_area, 1)
+
+    @property
+    def has_parameter_changes(self):
+        return any(track["offset"].value() != 0 or track["volume"].value() != 100 or track["mute"].isChecked()
+                   for track in self.tracks)
+
+    def reset_parameters(self):
+        for track in self.tracks:
+            track["offset"].setValue(0)
+            track["volume"].setValue(100)
+            track["mute"].setChecked(False)
 
     def _add_track_dialog(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -52,7 +68,7 @@ class MultitrackMixer(QWidget):
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(8, 8, 8, 8)
-        filename = QLabel(audio.filename)
+        filename = QLabel(Path(audio.filename).name or "Untitled audio")
         filename.setToolTip(audio.filename)
         filename.setMinimumWidth(120)
         row_layout.addWidget(filename, 2)
@@ -71,9 +87,20 @@ class MultitrackMixer(QWidget):
         row_layout.addWidget(volume, 1)
         mute = QCheckBox("Mute")
         row_layout.addWidget(mute)
+        remove = QPushButton("Remove")
+        remove.setToolTip("Remove this track from the mixer")
+        row_layout.addWidget(remove)
         self.track_layout.addWidget(row)
-        self.tracks.append({"audio": audio, "row": row, "offset": offset, "volume": volume, "mute": mute})
+        track = {"audio": audio, "row": row, "offset": offset, "volume": volume, "mute": mute}
+        self.tracks.append(track)
+        remove.clicked.connect(lambda: self._remove_track(track))
         self.mixdown_button.setEnabled(True)
+
+    def _remove_track(self, track):
+        self.tracks[:] = [item for item in self.tracks if item is not track]
+        self.track_layout.removeWidget(track["row"])
+        track["row"].deleteLater()
+        self.mixdown_button.setEnabled(bool(self.tracks))
 
     def _request_mixdown(self):
         if not self.tracks:
@@ -82,6 +109,7 @@ class MultitrackMixer(QWidget):
         tracks = [
             {
                 "samples": track["audio"].samples,
+                "sample_rate": track["audio"].sample_rate,
                 "offset": track["offset"].value(),
                 "volume": track["volume"].value() / 100.0,
                 "mute": track["mute"].isChecked(),

@@ -12,19 +12,28 @@ class Player:
         self.end = 0
         self.samples = None
         self.warning = ""
+        self._rendered_samples = None
+        self._fade_from = None
+        self._fade_position = 0
+        self._fade_frames = 1
+        self.protect_output = False
 
     @property
     def active(self):
         return self.stream is not None and self.stream.active
 
-    def play(self, audio, start=0, end=None, device=None):
+    def play(self, audio, start=0, end=None, device=None, *, preview=False):
         self.stop()
         self.samples = audio.samples
+        self._rendered_samples = self.samples
+        self._fade_from = None
+        self._fade_frames = max(1, round(audio.sample_rate * 0.01))
+        self.protect_output = preview
         self.position = int(start)
         self.end = len(audio.samples) if end is None else int(end)
         if not 0 <= self.position < self.end <= len(audio.samples):
             raise ValueError("Playback range is empty or invalid.")
-        if audio.peak > 1:
+        if audio.peak > 1 and not preview:
             raise ValueError("Audio exceeds full scale. Normalize before playback to prevent clipping.")
         self.warning = ""
         try:
@@ -37,13 +46,35 @@ class Player:
             self.stop()
             raise
 
+    def replace_audio(self, audio):
+        """Publish an immutable buffer; the callback owns the crossfade state."""
+        if self.samples is not None and audio.samples.shape != self.samples.shape:
+            raise ValueError("Live preview must keep the playback buffer shape.")
+        self.protect_output = True
+        self.samples = audio.samples
+
     def _callback(self, output, frames, time, status):
         output.fill(0)
         if status:
             self.warning = str(status)
         count = min(frames, self.end - self.position)
-        block = self.samples[self.position:self.position + count]
+        samples = self.samples
+        if samples is not self._rendered_samples:
+            self._fade_from = self._rendered_samples
+            self._rendered_samples = samples
+            self._fade_position = 0
+        block = samples[self.position:self.position + count]
         output[:count] = block[:, None] if block.ndim == 1 else block
+        if self._fade_from is not None:
+            fading = min(count, self._fade_frames - self._fade_position)
+            old = self._fade_from[self.position:self.position + fading]
+            weight = np.minimum(1, (np.arange(fading) + self._fade_position + 1) / self._fade_frames)[:, None]
+            output[:fading] = output[:fading] * weight + (old[:, None] if old.ndim == 1 else old) * (1 - weight)
+            self._fade_position += fading
+            if self._fade_position >= self._fade_frames:
+                self._fade_from = None
+        if self.protect_output:
+            np.clip(output, -1, 1, out=output)
         self.position += count
         if self.position >= self.end:
             raise self.driver.CallbackStop
@@ -111,4 +142,4 @@ class Microphone:
                 stream.abort()
             finally:
                 stream.close()
-        self.drain()
+        return self.drain()

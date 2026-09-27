@@ -2,18 +2,14 @@
 from pathlib import Path
 import math
 import numpy as np
-from scipy.signal import resample
 from PyQt6.QtCore import Qt, QTimer, QSize
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence, QIcon
 from PyQt6.QtWidgets import (
     QMainWindow, QMessageBox, QToolBar, QVBoxLayout, QWidget,
     QFileDialog, QLabel, QComboBox, QHBoxLayout,
     QFrame, QSplitter, QStackedWidget, QToolButton, QSizePolicy, QProgressBar, QTabWidget
 )
 import sounddevice as sd
-import sys
-import os
-from PyQt6.QtGui import QAction, QKeySequence, QIcon
 
 from soniccraft import __version__
 from .document import AudioData, Document
@@ -21,29 +17,28 @@ from .audio_engine import Player, Microphone
 from .jobs import Job
 from .waveform_widget import WaveformWidget
 from .effects_panel import EffectsPanel, number, button
-from .processing import process, sample_range, filter_sections, check_transform_size
+from .processing import process, sample_range, filter_sections, check_transform_size, mask_spectrum
 from soniccraft.dsp.filters import frequency_response
 from soniccraft.dsp.noise_reduction import estimate_noise_profile
 from .spectrum_widget import SpectrumWidget
-from soniccraft.dsp.transforms import fft_spectrum, image_to_audio, stft, inverse_stft
+from soniccraft.dsp.transforms import image_to_audio
 from .theme import label, icon, FileTitle
 from .sidebar import FeatureSidebar
 from .spectrogram_widget import SpectrogramWidget
-from .analysis import make_spectrogram
+from .analysis import MAX_SPECTRUM_SIZE, make_spectrogram, make_spectrum
 from .mixer_widget import MultitrackMixer
 from soniccraft.dsp.effects import mix_audio
+
+RECORDING_BYTE_LIMIT = 64 * 1024 * 1024
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setObjectName("soniccraftMainWindow")
         self.setWindowTitle("SonicCraft — Audio Editor")
-        # Safely locate the icon whether running via Python or PyInstaller .exe
-        bundle_dir = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(sys.argv[0])))
-        icon_path = os.path.join(bundle_dir, "SonicCraft_logo.ico")
-        self.setWindowIcon(QIcon(icon_path))
+        self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets" / "SonicCraft_logo.ico")))
         self.resize(1380, 960)
-        self.setMinimumSize(1000, 760)
+        self.setMinimumSize(1000, 640)
         self.setAcceptDrops(True)
         self.document = Document()
         self.player = Player()
@@ -52,8 +47,24 @@ class MainWindow(QMainWindow):
         self.live_samples = np.empty(0)
         self.live_sample_count = 0
         self.live_generation = 0
+        self.live_recording_blocks = []
+        self.live_recording_frames = 0
+        self.spectrum_job = None
+        self.spectrum_generation = 0
+        self.pending_spectrum = None
         self.job = None
         self.noise_profile = None
+        self.preview_audio = None
+        self.preview_job = None
+        self.preview_generation = 0
+        self.preview_request = None
+        self.preview_feature = None
+        self.preview_ready_generation = -1
+        self._refreshing = False
+        self.preview_timer = QTimer(self)
+        self.preview_timer.setSingleShot(True)
+        self.preview_timer.setInterval(80)
+        self.preview_timer.timeout.connect(self._start_preview)
         self.actions_by_name = {}
         self._build_actions()
         self._build_menus()
@@ -72,7 +83,7 @@ class MainWindow(QMainWindow):
         action = QAction(text, self)
         action.setObjectName(name)
         if name in ("open", "save", "undo", "redo", "play", "pause", "stop", "spectrum"):
-            action.setIcon(icon(name, "#10271f" if name == "play" else "#c9d7d4"))
+            action.setIcon(icon(name, "#292116" if name == "play" else "#ddd6ca"))
         if shortcut:
             action.setShortcut(shortcut)
         action.triggered.connect(callback)
@@ -89,10 +100,10 @@ class MainWindow(QMainWindow):
         self._action("undo", "&Undo", self.undo, QKeySequence.StandardKey.Undo)
         self._action("redo", "&Redo", self.redo, QKeySequence.StandardKey.Redo)
         self._action("reset_audio", "Reset audio", self.reset_audio)
-        self.actions_by_name["reset_audio"].setToolTip("Restore the original loaded audio and select its full range. Ctrl+Z undoes the reset.")
+        self.actions_by_name["reset_audio"].setToolTip("Clear live previews, reset effect controls and the noise profile, and restore the original audio and full view. Ctrl+Z restores applied edits.")
         self._action("exit", "E&xit", self.close, QKeySequence.StandardKey.Quit)
         self._action("reset_view", "&Reset waveform view", lambda: self.waveform.reset_view())
-        self._action("zoom_selection", "Focus selection", lambda: self.waveform.zoom_selection(), "Ctrl+J")
+        self._action("zoom_selection", "Fit audio", lambda: self.waveform.reset_view(), "Ctrl+J")
         self._action("select_all", "Select all", lambda: self.waveform.set_selection(0, self.document.audio.duration) if self.document.audio else None, QKeySequence.StandardKey.SelectAll)
         self.addAction(self.actions_by_name["zoom_selection"])
         self.addAction(self.actions_by_name["select_all"])
@@ -113,7 +124,7 @@ class MainWindow(QMainWindow):
             ("&File", ("open", "import_image", "save", "exit")),
             ("&Edit", ("undo", "redo", "reset_audio", "trim", "delete", "reverse", "silence")),
             ("&Effects", ("normalize", "volume_panel", "eq_panel", "noise_panel")), ("&Analysis", ("spectrum", "spectrogram", "live_spectrogram")),
-            ("&View", ("reset_view", "zoom_selection", "devices")), ("&Help", ("about",)),
+            ("&View", ("reset_view", "devices")), ("&Help", ("about",)),
         ):
             menu = self.menuBar().addMenu(title)
             self.menus[title] = menu
@@ -128,7 +139,7 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(19, 19))
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         mark = QLabel()
-        mark.setPixmap(icon("brand", "#91efd0").pixmap(32, 32))
+        mark.setPixmap(icon("brand", "#e6bd78").pixmap(32, 32))
         toolbar.addWidget(mark)
         toolbar.addWidget(label("SonicCraft", "brand"))
         toolbar.addSeparator()
@@ -160,8 +171,8 @@ class MainWindow(QMainWindow):
         self.workspace = QWidget(self)
         self.workspace.setObjectName("workspace")
         outer = QHBoxLayout(self.workspace)
-        outer.setContentsMargins(16, 14, 16, 10)
-        outer.setSpacing(16)
+        outer.setContentsMargins(12, 8, 12, 6)
+        outer.setSpacing(12)
         self.effects = EffectsPanel(self)
         self.effects.hide()
         self.sidebar = FeatureSidebar(self.effects)
@@ -174,10 +185,9 @@ class MainWindow(QMainWindow):
         outer.addWidget(self.editor_workspace, 1)
         self.layout = QVBoxLayout(self.editor_workspace)
         self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(10)
+        self.layout.setSpacing(6)
         heading = QHBoxLayout()
         title = QVBoxLayout()
-        title.addWidget(label("AUDIO WORKSPACE", "eyebrow"))
         self.file_title = FileTitle("Your next sound starts here.")
         title.addWidget(self.file_title)
         heading.addLayout(title, 1)
@@ -197,8 +207,8 @@ class MainWindow(QMainWindow):
         for key, title in (("duration", "DURATION"), ("rate", "SAMPLE RATE"), ("channels", "CHANNELS"), ("peak", "PEAK LEVEL")):
             frame = QFrame()
             frame.setObjectName("metric")
-            column = QVBoxLayout(frame)
-            column.setContentsMargins(16, 8, 16, 8)
+            column = QHBoxLayout(frame)
+            column.setContentsMargins(10, 5, 10, 5)
             column.addWidget(label(title, "muted"))
             self.metric_values[key] = label("—", "metricValue")
             column.addWidget(self.metric_values[key])
@@ -212,13 +222,13 @@ class MainWindow(QMainWindow):
         waveform_panel.setObjectName("panel")
         waveform_panel.setMinimumHeight(270)
         wave_layout = QVBoxLayout(waveform_panel)
-        wave_layout.setContentsMargins(14, 12, 14, 12)
+        wave_layout.setContentsMargins(10, 6, 10, 6)
         wave_header = QHBoxLayout()
         wave_header.addWidget(label("01   Waveform", "sectionTitle"))
         self.channel_legend = label("TIME DOMAIN", "eyebrow")
         wave_header.addWidget(self.channel_legend)
         wave_header.addStretch()
-        for name, text in (("zoom_selection", "Focus selection"), ("reset_view", "Fit audio"), ("spectrum", "Spectrum")):
+        for name, text in (("reset_view", "Fit audio"), ("spectrum", "Spectrum")):
             control = QToolButton()
             self.actions_by_name[name].setIconText(text)
             control.setDefaultAction(self.actions_by_name[name])
@@ -304,10 +314,13 @@ class MainWindow(QMainWindow):
         self.sidebar.live_stop_requested.connect(self.stop_live)
         self.mixer.mixdown_requested.connect(self._perform_mixdown)
         self.effects.requested.connect(self.apply_operation)
-        self.effects.preview_requested.connect(self.preview_filter)
+        self.effects.live_requested.connect(lambda feature, operation, parameters: self.request_preview(operation, parameters, feature=feature))
+        self.effects.reset_requested.connect(self.reset_tool)
+        self.sidebar.reset_requested.connect(self.reset_tool)
+        self.target_channel_combo.currentIndexChanged.connect(self._channel_changed)
         self.effects.profile_requested.connect(self.capture_profile)
         self.splitter.addWidget(self.analysis_panel)
-        self.splitter.setSizes([350, 350])
+        self.splitter.setSizes([450, 250])
         self.layout.addWidget(self.splitter, 1)
         devices = QHBoxLayout()
         devices.addWidget(label("OUTPUT", "eyebrow"))
@@ -316,7 +329,7 @@ class MainWindow(QMainWindow):
         self.output_device.setMaximumWidth(420)
         devices.addWidget(self.output_device)
         devices.addStretch()
-        self.shortcut_hint = label("Space  Play / pause     •     Ctrl+J  Focus selection")
+        self.shortcut_hint = label("Space  Play / pause     •     Graphs fitted to audio")
         devices.addWidget(self.shortcut_hint)
         self.layout.addLayout(devices)
         self.waveform.selection_changed.connect(self._selection_changed)
@@ -335,7 +348,7 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         if not getattr(self, "_initial_layout_set", False):
             self._initial_layout_set = True
-            self.splitter.setSizes([max(270, self.splitter.height() - 340), 330])
+            self.splitter.setSizes([max(270, int(self.splitter.height() * .65)), int(self.splitter.height() * .35)])
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -345,7 +358,7 @@ class MainWindow(QMainWindow):
     def _adapt_layout(self):
         compact = self.height() < 880
         self.metrics_panel.setVisible(not compact)
-        self.metadata.setVisible(not compact)
+        self.metadata.setVisible(False)
         self.waveform_panel.setMinimumHeight(240 if compact else 260)
         self.wave_stack.setMinimumHeight(120 if compact else 140)
         self.format_hint.setVisible(not compact)
@@ -376,9 +389,22 @@ class MainWindow(QMainWindow):
         self.selection_status.setText(f"{end - start:.3f} s selected")
         self.spectrogram_widget.clear()
         self.update_spectrum()
+        self._preview_scope_changed()
 
     def toggle_spectrum(self):
         self.sidebar.navigate("spectrum")
+
+    def _channel_changed(self):
+        self.spectrogram_widget.clear()
+        self.update_spectrum()
+        self._preview_scope_changed()
+
+    def _analysis_samples(self, audio, start, end):
+        samples = audio.samples[start:end]
+        channel = self.target_channel_combo.currentData()
+        if samples.ndim == 2 and audio.channels == 2 and channel is not None:
+            samples = samples[:, channel]
+        return samples
 
     def show_analysis(self, mode):
         self.analysis_tabs.setCurrentIndex({"spectrum": 0, "spectrogram": 1, "live": 2, "response": 3}[mode])
@@ -394,7 +420,9 @@ class MainWindow(QMainWindow):
             self.update_spectrum()
 
     def update_spectrum(self):
-        """Runs the FFT math and pushes data to the UI widget."""
+        """Analyze short selections immediately; move long transforms off the UI thread."""
+        self.spectrum_generation += 1
+        self.pending_spectrum = None
         if self.document.audio is None or self.analysis_tabs.currentIndex() != 0:
             return
             
@@ -409,23 +437,49 @@ class MainWindow(QMainWindow):
                 return
 
             selection_size = len(self.document.audio.samples[start:end])
-            samples = self.document.audio.samples[start:end]
-            if len(samples) > 131072:
-                samples = resample(samples, 131072, axis=0)
-
-            spectrum = fft_spectrum(samples, self.document.audio.sample_rate)
-            self.spectrum_widget.set_spectrum(spectrum)
-            detail = f"resampled to {len(samples):,} points for display" if len(samples) != selection_size else "full resolution"
+            audio = self.preview_audio or self.document.audio
+            samples = self._analysis_samples(audio, start, end)
+            detail = "averaged overlapping windows" if len(samples) > MAX_SPECTRUM_SIZE else "full resolution"
             self.sidebar.spectrum_scope.setText(
                 f"Analyzing {selection_size:,} selected samples from "
                 f"{start / self.document.audio.sample_rate:.3f} s ({detail})."
             )
+            if len(samples) <= MAX_SPECTRUM_SIZE:
+                self.spectrum_widget.set_spectrum(make_spectrum(samples, audio.sample_rate))
+            else:
+                self.pending_spectrum = (samples, audio.sample_rate, self.spectrum_generation)
+                self.spectrum_widget.current_spectrum = None
+                self.spectrum_widget.plot_curve.setData([], [])
+                self.spectrum_widget.info_label.setText("Analyzing selection…")
+                self._start_spectrum()
             
         except Exception as error:
             self.spectrum_widget.info_label.setText(f"Cannot analyze selection: {error}")
 
+    def _start_spectrum(self):
+        if self.spectrum_job is not None or self.pending_spectrum is None:
+            return
+        samples, rate, generation = self.pending_spectrum
+        self.pending_spectrum = None
+        self.spectrum_job = Job(lambda: make_spectrum(samples, rate), self)
+        def display(result):
+            if generation == self.spectrum_generation:
+                self.spectrum_widget.set_spectrum(result)
+        def failed(message):
+            if generation == self.spectrum_generation:
+                self.spectrum_widget.info_label.setText(f"Cannot analyze selection: {message}")
+        self.spectrum_job.succeeded.connect(display)
+        self.spectrum_job.failed.connect(failed)
+        self.spectrum_job.finished.connect(self._spectrum_finished)
+        self.spectrum_job.start()
+
+    def _spectrum_finished(self):
+        self.spectrum_job.deleteLater()
+        self.spectrum_job = None
+        self._start_spectrum()
+
     def generate_spectrogram(self):
-        audio = self.document.audio
+        audio = self.preview_audio or self.document.audio
         if audio is None:
             return
         try:
@@ -436,12 +490,18 @@ class MainWindow(QMainWindow):
         self.show_analysis("spectrogram")
         size = int(self.sidebar.fft_size.currentText())
         window = self.sidebar.window_function.currentText()
+        samples = self._analysis_samples(audio, start, end)
+        def display(data):
+            if audio is (self.preview_audio or self.document.audio):
+                self.spectrogram_widget.set_data(data)
+            else:
+                self.spectrogram_widget.clear("Preview changed during analysis. Generate a new spectrogram.")
         self.run_job("Generating spectrogram", lambda: make_spectrogram(
-            audio.samples[start:end], audio.sample_rate, size, window, offset=start / audio.sample_rate
-        ), self.spectrogram_widget.set_data)
+            samples, audio.sample_rate, size, window, offset=start / audio.sample_rate
+        ), display, keep_preview=True)
 
     def _apply_spectral_mask(self, t_start, t_end, f_start, f_end):
-        audio = self.document.audio
+        audio = self.preview_audio or self.document.audio
         if audio is None:
             return
         try:
@@ -450,35 +510,30 @@ class MainWindow(QMainWindow):
             self.error(error)
             return
 
-        samples = audio.samples[start:end]
-        selection_offset = start / audio.sample_rate
-
-        def worker():
-            transform = stft(samples, audio.sample_rate, n_fft=2048)
-            time_start = t_start - selection_offset
-            time_end = t_end - selection_offset
-            time_mask = (transform.times >= time_start) & (transform.times <= time_end)
-            frequency_mask = (transform.frequencies >= f_start) & (transform.frequencies <= f_end)
-            transform.spectrum[np.ix_(frequency_mask, time_mask)] = 0
-            changed = inverse_stft(transform)
-            result = audio.samples.copy()
-            result[start:end] = changed
-            return result
-
-        self.run_job("Applying spectral mask", worker, self._edited)
+        data = self.spectrogram_widget.current_data
+        if data is None:
+            self.error("Generate a spectrogram before muting a region.")
+            return
+        channel = self.target_channel_combo.currentData()
+        self.run_job("Applying spectral mask", lambda: mask_spectrum(
+            audio, (start, end), (t_start, t_end, f_start, f_end),
+            n_fft=data.n_fft, window=self.sidebar.window_function.currentText(), target_channel=channel,
+        ), self._edited)
 
     def _perform_mixdown(self, tracks, rate):
+        if not self.confirm_discard():
+            return
         def loaded(mixed_samples):
-            self.document.load(AudioData(mixed_samples, rate, "Master Mixdown"))
-            self.refresh()
+            self._loaded(AudioData(mixed_samples, rate, "Master Mixdown"), saved=False)
 
         self.run_job("Mixing tracks", lambda: mix_audio(tracks, rate), loaded)
 
     def start_live(self):
-        self.live_recording_buffer = np.empty(0)
         self.show_analysis("live")
         self.stop()
         self.stop_live()
+        self.live_recording_blocks = []
+        self.live_recording_frames = 0
         try:
             self.microphone.start(self.sidebar.input_device.currentData())
         except Exception as error:
@@ -498,22 +553,36 @@ class MainWindow(QMainWindow):
         if hasattr(self, "live_timer"):
             self.live_timer.stop()
         try:
-            self.microphone.stop()
+            self._capture_recording(self.microphone.stop())
         except Exception as error:
             self.statusBar().showMessage(f"Microphone stop failed: {error}")
         self.sidebar.set_monitoring(False)
         self.live_spectrogram.stop_button.setEnabled(False)
         if was_monitoring and self.live_spectrogram.current_data is not None:
             self.live_spectrogram.info_label.setText("Monitoring stopped · last captured view retained.")
-        if getattr(self, "live_recording_buffer", np.empty(0)).size and self.sidebar.record_live.isChecked():
+        recording, self.live_recording_blocks = self.live_recording_blocks, []
+        self.live_recording_frames = 0
+        if recording and self.sidebar.record_live.isChecked():
             if QMessageBox.question(
                 self, "Load live recording?", "Load the recorded microphone audio into the editor?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
-            ) == QMessageBox.StandardButton.Yes:
-                self.document.load(AudioData(self.live_recording_buffer, self.microphone.sample_rate, "Live Recording"))
-                self.refresh()
-        self.live_recording_buffer = np.empty(0)
+            ) == QMessageBox.StandardButton.Yes and self.confirm_discard():
+                self._loaded(AudioData(np.concatenate(recording), self.microphone.sample_rate, "Live Recording"), saved=False)
+
+    def _capture_recording(self, blocks):
+        if not self.sidebar.record_live.isChecked():
+            return False
+        remaining = RECORDING_BYTE_LIMIT // 8 - self.live_recording_frames
+        for block in blocks:
+            captured = block[:remaining].copy()
+            if len(captured):
+                self.live_recording_blocks.append(captured)
+                self.live_recording_frames += len(captured)
+                remaining -= len(captured)
+            if remaining == 0:
+                return True
+        return False
 
     def _live_tick(self):
         if self.microphone.stream is None:
@@ -528,7 +597,11 @@ class MainWindow(QMainWindow):
             self.live_sample_count += len(incoming)
             self.live_samples = np.concatenate((self.live_samples, incoming))[-int(self.microphone.sample_rate * 8):]
             if self.sidebar.record_live.isChecked():
-                self.live_recording_buffer = np.concatenate((self.live_recording_buffer, incoming))
+                # Append blocks once instead of copying the complete recording each tick.
+                if self._capture_recording([incoming]):
+                    self.stop_live()
+                    self.sidebar.live_status.setText("Recording reached the 64 MiB limit. Monitoring stopped.")
+                    return
         if self.microphone.dropped or self.microphone.warning:
             self.sidebar.live_status.setText(f"Monitoring · {self.microphone.dropped} dropped blocks. {self.microphone.warning}")
         if not blocks or self.live_job is not None:
@@ -555,9 +628,156 @@ class MainWindow(QMainWindow):
         self.live_job.deleteLater()
         self.live_job = None
 
+    def request_preview(self, operation, parameters, *, feature=None):
+        if self._refreshing or self.document.audio is None or self.job is not None:
+            return
+        self.stop_live()
+        self.preview_generation += 1
+        self.preview_request = (operation, dict(parameters))
+        self.preview_feature = feature or ("reduction" if operation in ("gate", "subtraction", "wiener") else operation)
+        self.statusBar().showMessage("Updating preview…")
+        self.update_actions()
+        if operation in ("eq", "filter"):
+            self.preview_filter(operation, parameters)
+        else:
+            self.show_analysis("spectrum")
+        if not self.preview_timer.isActive():
+            self.preview_timer.start()
+
+    def _preview_scope_changed(self):
+        if self.preview_request is not None and not self._refreshing:
+            self.request_preview(*self.preview_request, feature=self.preview_feature)
+
+    def _start_preview(self):
+        if self.preview_job is not None or self.preview_request is None or self.job is not None:
+            return
+        audio = self.document.audio
+        generation = self.preview_generation
+        operation, parameters = self.preview_request
+        parameters = {**parameters, "profile": self.noise_profile,
+                      "target_channel": self.target_channel_combo.currentData()}
+        try:
+            bounds = self.playback_range()
+        except ValueError as error:
+            self.statusBar().showMessage(str(error))
+            return
+        self.preview_job = Job(lambda: AudioData(
+            process(audio, bounds, operation, parameters), audio.sample_rate, audio.filename
+        ), self)
+
+        def current():
+            return generation == self.preview_generation and self.document.audio is audio
+
+        def display(result):
+            if not current():
+                return
+            self.preview_audio = result
+            self.preview_ready_generation = generation
+            if self.player.samples is not None:
+                self.player.replace_audio(result)
+            self.waveform.update_audio(result)
+            self.waveform.reset_view()
+            self.update_spectrum()
+            self.spectrogram_widget.clear("Audio preview changed. Generate a spectrogram to inspect it.")
+            self.document_badge.setText("LIVE PREVIEW")
+            self.statusBar().showMessage(
+                "Live preview · output clipped at full scale; lower EQ gain before applying."
+                if result.peak > 1 else "Live preview"
+            )
+
+        def failed(message):
+            if current():
+                self.preview_audio = None
+                self.preview_ready_generation = -1
+                if self.player.samples is not None:
+                    self.player.replace_audio(audio)
+                self.waveform.update_audio(audio)
+                self.waveform.reset_view()
+                self.update_spectrum()
+                self.document_badge.setText("UNSAVED CHANGES" if self.document.dirty else "LOCAL SESSION")
+                self.statusBar().showMessage("Preview unavailable: " + message)
+
+        def finished():
+            self.preview_job.deleteLater()
+            self.preview_job = None
+            if self.preview_request is not None and generation != self.preview_generation and not self.preview_timer.isActive():
+                self.preview_timer.start(0)
+
+        self.preview_job.succeeded.connect(display)
+        self.preview_job.failed.connect(failed)
+        self.preview_job.finished.connect(finished)
+        self.preview_job.start()
+
+    def discard_preview(self, *, restore=True, reset_eq=True):
+        self.preview_generation += 1
+        self.preview_timer.stop()
+        self.preview_request = None
+        self.preview_feature = None
+        self.preview_audio = None
+        self.preview_ready_generation = -1
+        self.effects.response.clear()
+        self.effects.blockSignals(True)
+        try:
+            if reset_eq:
+                self.effects.reset_eq()
+        finally:
+            self.effects.blockSignals(False)
+        audio = self.document.audio
+        if restore and audio is not None:
+            if self.player.samples is not None and self.player.samples.shape == audio.samples.shape:
+                self.player.replace_audio(audio)
+            self.waveform.update_audio(audio)
+            self.waveform.reset_view()
+            self.update_spectrum()
+        self.document_badge.setText("UNSAVED CHANGES" if self.document.dirty else "LOCAL SESSION")
+
+    def reset_tool(self, feature):
+        """Reset a tool's transient state, never the document or another tool."""
+        operation = self.preview_request[0] if self.preview_request else None
+        affected = self.preview_feature == feature
+        if feature == "profile":
+            self.noise_profile = None
+            self.effects.profile_label.setText("No noise profile captured")
+            affected = operation in ("gate", "subtraction")
+        elif feature == "filter":
+            affected = affected or operation == "filter"
+        elif feature == "spectrum":
+            self.spectrum_widget.scale_combo.setCurrentIndex(0)
+        elif feature == "spectrogram":
+            self.spectrogram_widget.reset_parameters()
+            self.spectrogram_widget.clear("Spectrogram settings reset. Generate a new spectrogram.")
+        elif feature == "live":
+            self.stop_live()
+            self.live_samples = np.empty(0)
+            self.live_sample_count = 0
+            self.live_spectrogram.reset_parameters()
+            self.live_spectrogram.clear("Live spectrogram settings reset. Start monitoring to listen.")
+        if affected:
+            self.discard_preview(reset_eq=False)
+            self.spectrogram_widget.clear("Preview reset. Generate a new spectrogram.")
+        if feature in ("eq", "filter") and self.preview_request is None:
+            self.effects.response.clear()
+        self.update_actions()
+        self.statusBar().showMessage("Tool settings reset")
+
+    def _commit_effect(self, samples):
+        selection = self.waveform.region.getRegion()
+        self.document.commit(samples)
+        self.refresh()
+        self.waveform.set_selection(*selection)
+        if self.player.samples is not None:
+            self.player.replace_audio(self.document.audio)
+        self.waveform.set_position(self.player.position / self.document.audio.sample_rate)
+        self.statusBar().showMessage("Preview saved to audio · Ctrl+Z to undo · Export to save a file")
+
     def apply_operation(self, operation, parameters):
         audio = self.document.audio
         if audio is None:
+            return
+        if (self.preview_audio is not None and self.preview_ready_generation == self.preview_generation
+                and self.preview_request == (operation, parameters)):
+            preview = self.preview_audio
+            self._commit_effect(preview.samples)
             return
         parameters = {
             **parameters,
@@ -569,19 +789,24 @@ class MainWindow(QMainWindow):
         except ValueError as error:
             self.error(error)
             return
-        self.run_job(operation.title(), lambda: process(audio, bounds, operation, parameters), self._edited)
+        live_effect = operation in ("eq", "filter", "subtraction", "gate", "wiener")
+        self.run_job(operation.title(), lambda: process(audio, bounds, operation, parameters),
+                     self._commit_effect if live_effect else self._edited, preserve_playback=live_effect)
 
     def preview_filter(self, operation, parameters):
         audio = self.document.audio
         if audio is None:
             return
-        def display(response):
+        try:
+            response = frequency_response(filter_sections(operation, parameters, audio.sample_rate), audio.sample_rate)
             self.effects.response.clear()
-            self.effects.response.plot(response.frequencies, response.magnitude_db, pen="#91efd0")
+            self.effects.response.plot(response.frequencies, response.magnitude_db, pen="#e6bd78")
+            self.effects.response.setXRange(0, audio.sample_rate / 2, padding=0)
+            self.effects.response.setYRange(min(-24, float(np.min(response.magnitude_db)) - 3),
+                                           max(24, float(np.max(response.magnitude_db)) + 3), padding=0)
             self.show_analysis("response")
-        self.run_job("Calculating filter response", lambda: frequency_response(
-            filter_sections(operation, parameters, audio.sample_rate), audio.sample_rate
-        ), display)
+        except ValueError as error:
+            self.statusBar().showMessage(str(error))
 
     def capture_profile(self):
         audio = self.document.audio
@@ -626,10 +851,13 @@ class MainWindow(QMainWindow):
     def error(self, message):
         QMessageBox.warning(self, "SonicCraft", str(message))
 
-    def run_job(self, title, function, on_success):
+    def run_job(self, title, function, on_success, *, preserve_playback=False, keep_preview=False):
         if self.job is not None:
             return
-        self.stop()
+        if not keep_preview:
+            self.discard_preview(restore=not preserve_playback)
+        if not preserve_playback:
+            self.stop()
         self.stop_live()
         self.statusBar().showMessage(title + "…")
         self.job = Job(function, self)
@@ -639,7 +867,11 @@ class MainWindow(QMainWindow):
             except Exception as error:
                 self.error(error)
         self.job.succeeded.connect(complete)
-        self.job.failed.connect(self.error)
+        def failed(message):
+            if preserve_playback:
+                self.discard_preview()
+            self.error(message)
+        self.job.failed.connect(failed)
         self.job.finished.connect(self._job_finished)
         self.update_actions()
         self.job.start()
@@ -647,6 +879,8 @@ class MainWindow(QMainWindow):
     def _job_finished(self):
         self.job.deleteLater()
         self.job = None
+        if self.preview_request is not None and self.preview_ready_generation != self.preview_generation:
+            self.preview_timer.start(0)
         self.update_actions()
         self.statusBar().showMessage("Ready")
 
@@ -673,7 +907,8 @@ class MainWindow(QMainWindow):
             self, "Import spectrogram image", "", "Images (*.png *.jpg *.bmp)"
         )
         if path:
-            self.run_job("Importing spectrogram image", lambda: self._load_image_audio(path), self._loaded)
+            self.run_job("Importing spectrogram image", lambda: self._load_image_audio(path),
+                         lambda audio: self._loaded(audio, saved=False))
 
     @staticmethod
     def _load_image_audio(path):
@@ -684,11 +919,14 @@ class MainWindow(QMainWindow):
     def open_path(self, path):
         self.run_job("Opening audio", lambda: AudioData.open(path), self._loaded)
 
-    def _loaded(self, audio):
+    def _loaded(self, audio, *, saved=True):
         self.noise_profile = None
         self.effects.profile_label.setText("No noise profile captured")
         self.effects.response.clear()
         self.document.load(audio)
+        if not saved:
+            self.document.saved_samples = None
+        self.target_channel_combo.setCurrentIndex(0)
         self.refresh()
 
     def save_dialog(self):
@@ -734,7 +972,7 @@ class MainWindow(QMainWindow):
         return sample_range(self.document.audio, *self.waveform.region.getRegion())
 
     def play(self):
-        audio = self.document.audio
+        audio = self.preview_audio or self.document.audio
         if audio is None:
             return
         self.stop_live()
@@ -742,7 +980,10 @@ class MainWindow(QMainWindow):
             start, end = self.playback_range()
             if self.player.samples is audio.samples and start <= self.player.position < end:
                 start = self.player.position
-            self.player.play(audio, start, end, self.output_device.currentData())
+            if self.preview_audio is not None:
+                self.player.play(audio, start, end, self.output_device.currentData(), preview=True)
+            else:
+                self.player.play(audio, start, end, self.output_device.currentData())
         except Exception as error:
             self.error(f"Playback failed: {error}")
         self.update_actions()
@@ -771,8 +1012,7 @@ class MainWindow(QMainWindow):
         audio = self.document.audio
         if audio:
             position = self.player.position / audio.sample_rate
-            for playhead in self.waveform.playhead_items:
-                playhead.setValue(position)
+            self.waveform.set_position(position)
             self.timecode.setText(self.format_time(position))
         self.update_actions()
 
@@ -792,21 +1032,56 @@ class MainWindow(QMainWindow):
         self.document.redo()
         self.refresh()
 
+    @property
+    def can_reset_audio(self):
+        return (
+            self.document.can_reset or self.preview_request is not None
+            or self.noise_profile is not None or self.effects.has_parameter_changes
+            or self.sidebar.has_parameter_changes or self.mixer.has_parameter_changes
+            or self.spectrum_widget.scale_combo.currentIndex() != 0
+            or self.spectrogram_widget.has_parameter_changes or self.live_spectrogram.has_parameter_changes
+            or self.target_channel_combo.currentIndex() != 0
+            or (self.document.audio is not None
+                and self.waveform.region.getRegion() != (0, self.document.audio.duration))
+        )
+
     def reset_audio(self):
-        if self.job is not None or not self.document.can_reset:
+        if self.job is not None or not self.can_reset_audio:
             return
+        had_edits = self.document.can_reset
+        self.discard_preview(restore=False)
         self.stop()
+        self.sidebar.record_live.setChecked(False)
+        source_audio = self.document.audio
         self.stop_live()
+        if self.document.audio is not source_audio:
+            self.statusBar().showMessage("Recording loaded. Choose the operation again for the new audio.")
+            return
         self.document.reset_to_original()
+        self.effects.reset_parameters()
+        self.sidebar.reset_parameters()
+        self.spectrum_widget.scale_combo.setCurrentIndex(0)
+        self.spectrogram_widget.reset_parameters()
+        self.live_spectrogram.reset_parameters()
+        self.live_spectrogram.clear("Start monitoring to see microphone audio.")
+        self.live_samples = np.empty(0)
+        self.live_sample_count = 0
+        self.mixer.reset_parameters()
+        self.target_channel_combo.setCurrentIndex(0)
         self.noise_profile = None
         self.effects.profile_label.setText("No noise profile captured")
         self.effects.response.clear()
         self.refresh()
-        self.statusBar().showMessage("Original audio restored · Ctrl+Z to undo the reset")
+        self._tick()
+        self.statusBar().showMessage("Original audio restored · Ctrl+Z to undo the reset" if had_edits else "Preview and effect settings reset")
 
     def refresh(self):
+        self._refreshing = True
+        self.discard_preview(restore=False)
         audio = self.document.audio
         if audio:
+            if not self.player.active:
+                self.player.samples = audio.samples
             self.file_title.setText(Path(audio.filename).name or "Untitled audio")
             self.file_title.setToolTip(audio.filename)
             self.document_badge.setText("OVER FULL SCALE" if audio.peak > 1 else "UNSAVED CHANGES" if self.document.dirty else "LOCAL SESSION")
@@ -817,7 +1092,7 @@ class MainWindow(QMainWindow):
             peak_db = f"{20 * math.log10(audio.peak):.1f}" if audio.peak else "−∞"
             self.metric_values["peak"].setText(f"{peak_db} dBFS")
             self.metric_values["peak"].setStyleSheet("color: #ffaca6;" if audio.peak > 1 else "")
-            self.channel_legend.setText("L  MINT   /   R  VIOLET" if audio.channels == 2 else "MONO  /  MINT")
+            self.channel_legend.setText("L  CORAL   /   R  AMBER" if audio.channels == 2 else "MONO  /  CORAL")
             self.wave_stack.setCurrentWidget(self.waveform)
             self.start_time.setMaximum(audio.duration)
             self.end_time.setMaximum(audio.duration)
@@ -828,9 +1103,11 @@ class MainWindow(QMainWindow):
             )
             self.waveform.set_audio(audio)
             self.effects.set_sample_rate(audio.sample_rate)
+            self.target_channel_combo.setEnabled(audio.channels == 2)
         self.setWindowTitle("SonicCraft — Audio Editor" + (" *" if self.document.dirty else ""))
         self.statusBar().showMessage("Ready" if audio else "Ready — no audio loaded")
         self.update_actions()
+        self._refreshing = False
 
     def update_actions(self):
         loaded = self.document.audio is not None
@@ -840,7 +1117,7 @@ class MainWindow(QMainWindow):
             states[name] = ready and loaded
         states["undo"] = ready and bool(self.document.undo_stack)
         states["redo"] = ready and bool(self.document.redo_stack)
-        states["reset_audio"] = ready and self.document.can_reset
+        states["reset_audio"] = ready and self.can_reset_audio
         states["stop"] = self.player.stream is not None
         for name, enabled in states.items():
             self.actions_by_name[name].setEnabled(enabled)
@@ -849,7 +1126,7 @@ class MainWindow(QMainWindow):
             self._transport_playing = playing
             action = self.actions_by_name["play"]
             action.setText("&Pause" if playing else "&Play")
-            action.setIcon(icon("pause" if playing else "play", "#10271f"))
+            action.setIcon(icon("pause" if playing else "play", "#292116"))
             action.setToolTip("Pause playback · Space" if playing else "Play / resume selection · Space")
             self.play_button.setAccessibleName("Pause audio" if playing else "Play audio")
         if hasattr(self, "workspace"):
@@ -864,12 +1141,19 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Wait for the current operation before closing.")
             event.ignore()
             return
+        self.stop_live()
         if not self.confirm_discard():
             event.ignore()
             return
-        self.stop_live()
+        self.discard_preview(restore=False)
+        if self.preview_job is not None:
+            self.preview_job.wait()
         if self.live_job is not None:
             self.live_job.wait()
+        self.spectrum_generation += 1
+        self.pending_spectrum = None
+        if self.spectrum_job is not None:
+            self.spectrum_job.wait()
         self.stop()
         self.timer.stop()
         event.accept()

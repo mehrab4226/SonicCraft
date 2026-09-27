@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import ndimage, signal
 
-from ._validation import as_audio_array, validate_positive_int, validate_probability, validate_sample_rate
+from ._validation import as_audio_array, validate_positive_int, validate_probability
 from .transforms import STFTResult, inverse_stft, stft
 
 

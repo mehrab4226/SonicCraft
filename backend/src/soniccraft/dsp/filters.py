@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -69,36 +68,6 @@ def apply_filter(audio: ArrayLike, sections: ArrayLike, *, zero_phase: bool = Fa
     return signal.sosfilt(sos, samples, axis=0)
 
 
-def lowpass(audio: ArrayLike, sample_rate: float, cutoff: float, *, order: int = 4, zero_phase: bool = False) -> NDArray[np.float64]:
-    return apply_filter(audio, butterworth(cutoff, sample_rate, kind="lowpass", order=order), zero_phase=zero_phase)
-
-
-def highpass(audio: ArrayLike, sample_rate: float, cutoff: float, *, order: int = 4, zero_phase: bool = False) -> NDArray[np.float64]:
-    return apply_filter(audio, butterworth(cutoff, sample_rate, kind="highpass", order=order), zero_phase=zero_phase)
-
-
-def bandpass(audio: ArrayLike, sample_rate: float, low_cutoff: float, high_cutoff: float, *, order: int = 4, zero_phase: bool = False) -> NDArray[np.float64]:
-    sections = butterworth((low_cutoff, high_cutoff), sample_rate, kind="bandpass", order=order)
-    return apply_filter(audio, sections, zero_phase=zero_phase)
-
-
-def bandstop(audio: ArrayLike, sample_rate: float, low_cutoff: float, high_cutoff: float, *, order: int = 4, zero_phase: bool = False) -> NDArray[np.float64]:
-    sections = butterworth((low_cutoff, high_cutoff), sample_rate, kind="bandstop", order=order)
-    return apply_filter(audio, sections, zero_phase=zero_phase)
-
-
-def notch_filter(audio: ArrayLike, sample_rate: float, frequency: float, *, q: float = 30.0, zero_phase: bool = False) -> NDArray[np.float64]:
-    """Remove a narrow tonal component such as 50/60 Hz mains hum."""
-
-    rate = validate_sample_rate(sample_rate)
-    if not 0 < frequency < rate / 2:
-        raise ValueError("frequency must be between 0 and the Nyquist frequency")
-    if not np.isfinite(q) or q <= 0:
-        raise ValueError("q must be finite and positive")
-    numerator, denominator = signal.iirnotch(frequency, q, fs=rate)
-    return apply_filter(audio, signal.tf2sos(numerator, denominator), zero_phase=zero_phase)
-
-
 def peaking_eq_sections(band: ParametricEQBand, sample_rate: float) -> NDArray[np.float64]:
     """Create an RBJ peaking-EQ biquad in SOS representation."""
 
@@ -119,37 +88,6 @@ def peaking_eq_sections(band: ParametricEQBand, sample_rate: float) -> NDArray[n
     numerator /= denominator[0]
     denominator /= denominator[0]
     return signal.tf2sos(numerator, denominator)
-
-
-def apply_parametric_eq(
-    audio: ArrayLike,
-    sample_rate: float,
-    bands: Sequence[ParametricEQBand],
-    *,
-    zero_phase: bool = False,
-) -> NDArray[np.float64]:
-    """Apply a cascade of parametric peaking filters."""
-
-    samples = as_audio_array(audio)
-    if not bands:
-        return samples.copy()
-    sections = np.vstack([peaking_eq_sections(band, sample_rate) for band in bands])
-    return apply_filter(samples, sections, zero_phase=zero_phase)
-
-
-def graphic_equalizer(
-    audio: ArrayLike,
-    sample_rate: float,
-    center_frequencies: Sequence[float],
-    gains_db: Sequence[float],
-    *,
-    q: float = 1.4,
-    zero_phase: bool = False,
-) -> NDArray[np.float64]:
-    if len(center_frequencies) != len(gains_db):
-        raise ValueError("center_frequencies and gains_db must have equal length")
-    bands = [ParametricEQBand(float(frequency), float(gain), q) for frequency, gain in zip(center_frequencies, gains_db, strict=True)]
-    return apply_parametric_eq(audio, sample_rate, bands, zero_phase=zero_phase)
 
 
 def frequency_response(sections: ArrayLike, sample_rate: float, *, points: int = 2048) -> FilterResponse:
