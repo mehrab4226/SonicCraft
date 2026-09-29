@@ -281,7 +281,7 @@ class MainWindow(QMainWindow):
         self.target_channel_combo.addItem("Both Channels", None)
         self.target_channel_combo.addItem("Left Channel", 0)
         self.target_channel_combo.addItem("Right Channel", 1)
-        selection.addWidget(label("Target"))
+        selection.addWidget(label("Target / profile"))
         selection.addWidget(self.target_channel_combo)
         button(selection, "Set range", self.set_selection_from_inputs)
         button(selection, "Select all", self.actions_by_name["select_all"].trigger)
@@ -519,10 +519,13 @@ class MainWindow(QMainWindow):
             self.error("Generate a spectrogram before muting a region.")
             return
         channel = self.target_channel_combo.currentData()
+        def masked(samples):
+            self._edited(samples)
+            QTimer.singleShot(0, self.generate_spectrogram)
         self.run_job("Applying spectral mask", lambda: mask_spectrum(
             audio, (start, end), (t_start, t_end, f_start, f_end),
             n_fft=data.n_fft, window=self.sidebar.window_function.currentText(), target_channel=channel,
-        ), self._edited)
+        ), masked)
 
     def _perform_mixdown(self, tracks, rate):
         if not self.confirm_discard():
@@ -811,16 +814,21 @@ class MainWindow(QMainWindow):
         audio = self.document.audio
         if audio is None:
             return
+        channel = self.target_channel_combo.currentData()
         try:
             start, end = self.playback_range()
-            check_transform_size(audio.samples[start:end], 2048, 512)
+            samples = audio.samples[start:end, channel] if channel is not None else audio.samples[start:end]
+            check_transform_size(samples, 2048, 512)
         except ValueError as error:
             self.error(error)
             return
         def captured(profile):
             self.noise_profile = profile
-            self.effects.profile_label.setText(f"Captured {start / audio.sample_rate:.3f}–{end / audio.sample_rate:.3f} s, {audio.channels} channel(s)")
-        self.run_job("Estimating noise", lambda: estimate_noise_profile(audio.samples[start:end], audio.sample_rate), captured)
+            channel_name = "Both Channels" if channel is None else ("Left Channel" if channel == 0 else "Right Channel")
+            self.effects.profile_label.setText(
+                f"Captured {start / audio.sample_rate:.3f}–{end / audio.sample_rate:.3f} s, {channel_name}"
+            )
+        self.run_job("Estimating noise", lambda: estimate_noise_profile(samples, audio.sample_rate), captured)
 
     def _edited(self, samples):
         self.document.commit(samples)

@@ -157,3 +157,17 @@ class AnalysisWorkspaceTests(unittest.TestCase):
         self.assertFalse(self.window.sidebar.live_stop.isEnabled())
         self.assertIn("Load audio", self.window.sidebar.live_status.text())
         self.assertIsNone(self.window.microphone.stream)
+
+    def test_noise_profile_can_capture_only_the_selected_channel(self):
+        rate = 8000
+        samples = np.column_stack((
+            np.zeros(rate),
+            .2 * np.sin(2 * np.pi * 440 * np.arange(rate) / rate),
+        ))
+        self.window._loaded(AudioData(samples, rate, "stereo.wav"))
+        self.window.target_channel_combo.setCurrentIndex(2)
+        self.window.capture_profile()
+        self.wait_jobs()
+        self.assertIsNotNone(self.window.noise_profile)
+        self.assertEqual(self.window.noise_profile.magnitude.ndim, 1)
+        self.assertIn("Right Channel", self.window.effects.profile_label.text())
